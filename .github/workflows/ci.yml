@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EMSDK_VERSION: "7.0.0"
+
+jobs:
+  engine:
+    name: Motor C++
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests nativos (g++ y CMake)
+        run: |
+          cmake -S engine -B engine/build/native
+          cmake --build engine/build/native
+          ctest --test-dir engine/build/native --output-on-failure
+
+      - name: Instalar Emscripten ${{ env.EMSDK_VERSION }}
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: ${{ env.EMSDK_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Tests compilados a WebAssembly
+        run: python engine/build.py --test
+
+      - name: Compilar engine.wasm
+        run: python engine/build.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-wasm
+          path: engine/build/engine.wasm
+
+  optimizer:
+    name: Optimizador (FastAPI)
+    needs: engine
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: optimizer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Runs the tests against the wasm compiled from the current sources, so
+      # a stale committed binary cannot hide a broken engine.
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-wasm
+          path: optimizer/app
+      - name: Instalar dependencias
+        run: pip install fastapi wasmtime pyjwt pytest httpx2
+      - name: Tests
+        run: pytest -q
+
+  backend:
+    name: Backend (Django)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar dependencias
+        run: pip install . pytest pytest-django
+      - name: Migraciones al día
+        run: python manage.py makemigrations --check --dry-run
+      - name: Tests
+        run: pytest -q
+
+  frontend:
+    name: Frontend (AngularJS)
+    needs: engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-wasm
+          path: frontend/wasm
+      - name: Tests del cargador WebAssembly
+        run: node --test "frontend/tests/*.mjs"
