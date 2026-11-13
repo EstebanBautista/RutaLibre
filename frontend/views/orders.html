@@ -1,0 +1,65 @@
+<section class="workspace">
+  <div class="panel">
+    <header class="panel__header">
+      <h1>Pedidos</h1>
+      <p class="panel__summary" ng-if="!vm.loading && !vm.loadError">
+        {{vm.countBy('pending')}} pendientes, {{vm.countBy('assigned')}} en ruta, {{vm.countBy('delivered')}} entregados
+      </p>
+    </header>
+
+    <p class="notice" ng-if="vm.loading">Cargando pedidos…</p>
+    <div class="notice notice--error" role="alert" ng-if="vm.loadError">
+      {{vm.loadError}}
+      <button type="button" class="button button--quiet" ng-click="vm.retry()">Reintentar</button>
+    </div>
+
+    <form class="order-form" ng-submit="vm.save()" ng-if="!vm.loading && !vm.loadError" novalidate>
+      <h2>Nuevo pedido</h2>
+      <label for="order-customer">Cliente</label>
+      <input id="order-customer" type="text" maxlength="120" ng-model="vm.draft.customer_name">
+      <label for="order-address">Dirección</label>
+      <input id="order-address" type="text" maxlength="200" ng-model="vm.draft.address">
+      <label for="order-notes">Notas para el repartidor</label>
+      <input id="order-notes" type="text" maxlength="300" ng-model="vm.draft.notes">
+
+      <p class="location" ng-class="{'is-set': vm.hasLocation()}">
+        <span ng-if="!vm.hasLocation()">Haz clic en el mapa para marcar dónde se entrega.</span>
+        <span ng-if="vm.hasLocation()">
+          Ubicación marcada en {{vm.draft.lat | number:4}}, {{vm.draft.lng | number:4}}.
+          <button type="button" class="link" ng-click="vm.clearLocation()">Quitar</button>
+        </span>
+      </p>
+
+      <p class="notice notice--error" role="alert" ng-if="vm.formError">{{vm.formError}}</p>
+      <button type="submit" class="button" ng-disabled="vm.saving">{{vm.saving ? 'Guardando…' : 'Guardar pedido'}}</button>
+    </form>
+
+    <p class="notice notice--error" role="alert" ng-if="vm.listError">{{vm.listError}}</p>
+
+    <div class="empty" ng-if="!vm.loading && !vm.loadError && !vm.orders.length">
+      <p>Todavía no hay pedidos. Crea el primero con el formulario de arriba.</p>
+    </div>
+
+    <ul class="rows" ng-if="vm.orders.length">
+      <li class="row" ng-repeat="order in vm.orders track by order.id">
+        <div class="row__main">
+          <p class="row__title">{{order.customer_name}}</p>
+          <p class="row__detail">{{order.address}}</p>
+          <p class="row__detail row__detail--note" ng-if="order.notes">{{order.notes}}</p>
+        </div>
+        <div class="row__side">
+          <span class="status status--{{order.status}}">{{order.status | estadoPedido}}</span>
+          <button type="button" class="link link--danger" ng-if="order.status === 'pending'"
+                  ng-click="vm.remove(order)" ng-disabled="order.removing"
+                  aria-label="Borrar el pedido de {{order.customer_name}}">
+            {{order.removing ? 'Borrando…' : 'Borrar'}}
+          </button>
+        </div>
+      </li>
+    </ul>
+  </div>
+
+  <div class="mapwrap">
+    <div id="orders-map" class="map" role="application" aria-label="Mapa de pedidos"></div>
+  </div>
+</section>

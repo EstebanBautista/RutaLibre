@@ -1,0 +1,29 @@
+<section class="login">
+  <div class="login__intro">
+    <p class="wordmark wordmark--large">Ruta<span>Libre</span></p>
+    <h1>Las entregas del día, en el orden más corto.</h1>
+    <p class="login__lead">
+      Carga los pedidos, elige cuáles salen hoy y RutaLibre ordena el recorrido.
+      El cálculo lo hace un motor en C++ que corre dentro de tu navegador.
+    </p>
+    <button type="button" class="button button--large" ng-click="vm.enterDemo()" ng-disabled="vm.busy">
+      {{vm.busy === 'demo' ? 'Entrando…' : 'Entrar al demo'}}
+    </button>
+    <p class="login__hint">Sin registro. Entras a una panadería de Cali con 12 pedidos listos para planificar.</p>
+  </div>
+
+  <form class="login__form" ng-submit="vm.submit()" novalidate>
+    <h2>Entrar con tu cuenta</h2>
+    <label for="login-user">Usuario</label>
+    <input id="login-user" type="text" ng-model="vm.username" autocomplete="username" autocapitalize="none">
+    <label for="login-pass">Contraseña</label>
+    <input id="login-pass" type="password" ng-model="vm.password" autocomplete="current-password">
+    <button type="submit" class="button button--outline" ng-disabled="vm.busy">
+      {{vm.busy === 'password' ? 'Entrando…' : 'Entrar'}}
+    </button>
+    <p class="notice notice--error" role="alert" ng-if="vm.error">{{vm.error}}</p>
+    <p class="login__links">
+      <a ng-href="{{vm.config.REPO_URL}}" target="_blank" rel="noopener">Ver el código en GitHub</a>
+    </p>
+  </form>
+</section>

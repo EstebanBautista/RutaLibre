@@ -1,0 +1,44 @@
+<section class="page">
+  <header class="page__header">
+    <h1>Rutas</h1>
+    <a class="button" href="#!/planificar">Planificar ruta</a>
+  </header>
+
+  <p class="notice" ng-if="vm.loading">Cargando rutas…</p>
+  <div class="notice notice--error" role="alert" ng-if="vm.loadError">
+    {{vm.loadError}}
+    <button type="button" class="button button--quiet" ng-click="vm.retry()">Reintentar</button>
+  </div>
+
+  <div class="empty" ng-if="!vm.loading && !vm.loadError && !vm.routes.length">
+    <p>Aún no hay rutas. Elige los pedidos de hoy y RutaLibre ordena el recorrido.</p>
+    <a class="button button--outline" href="#!/planificar">Planificar la primera ruta</a>
+  </div>
+
+  <div class="tablewrap" ng-if="vm.routes.length">
+    <table class="table">
+      <thead>
+        <tr>
+          <th scope="col">Fecha</th>
+          <th scope="col">Repartidor</th>
+          <th scope="col">Estado</th>
+          <th scope="col">Entregas</th>
+          <th scope="col" class="is-number">Recorrido</th>
+          <th scope="col" class="is-number">Ahorro</th>
+          <th scope="col"><span class="visually-hidden">Abrir</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr ng-repeat="route in vm.routes track by route.id">
+          <td>{{route.date | fecha}}</td>
+          <td>{{route.driver.name}}</td>
+          <td><span class="status status--{{route.status}}">{{route.status | estadoRuta}}</span></td>
+          <td>{{route.delivered_count}} de {{route.stops_count}}</td>
+          <td class="is-number">{{route.total_km | km}}</td>
+          <td class="is-number">{{route.saved_km | km}}</td>
+          <td><a ng-href="#!/rutas/{{route.id}}">Ver ruta</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>

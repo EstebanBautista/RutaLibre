@@ -1,0 +1,72 @@
+<section class="workspace">
+  <div class="panel">
+    <p class="notice" ng-if="vm.loading">Cargando la ruta…</p>
+    <div class="notice notice--error" role="alert" ng-if="vm.loadError">
+      {{vm.loadError}}
+      <button type="button" class="button button--quiet" ng-click="vm.retry()">Reintentar</button>
+    </div>
+    <div class="empty" ng-if="vm.notFound">
+      <p>Esta ruta ya no existe. Puede que el demo se haya restablecido.</p>
+      <a class="button button--outline" href="#!/rutas">Ver todas las rutas</a>
+    </div>
+
+    <div ng-if="vm.route">
+      <header class="panel__header">
+        <a class="back" href="#!/rutas">Todas las rutas</a>
+        <h1>Ruta del {{vm.route.date | fecha}}</h1>
+        <p class="panel__summary">
+          {{vm.route.driver.name}}
+          <span class="status status--{{vm.route.status}}">{{vm.route.status | estadoRuta}}</span>
+        </p>
+      </header>
+
+      <dl class="figures">
+        <div>
+          <dt>Recorrido</dt>
+          <dd>{{vm.route.total_km | km}}</dd>
+        </div>
+        <div>
+          <dt>Sin optimizar</dt>
+          <dd>{{vm.route.naive_km | km}}</dd>
+        </div>
+        <div>
+          <dt>Ahorro</dt>
+          <dd>{{vm.route.saved_km | km}}</dd>
+        </div>
+      </dl>
+
+      <div class="progress">
+        <p>{{vm.route.delivered_count}} de {{vm.route.stops_count}} entregadas</p>
+        <div class="progress__track" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="{{vm.progressPercent()}}" aria-label="Avance de la ruta">
+          <span ng-style="{width: vm.progressPercent() + '%'}"></span>
+        </div>
+      </div>
+
+      <p class="notice notice--error" role="alert" ng-if="vm.deliverError">{{vm.deliverError}}</p>
+
+      <ol class="stops">
+        <li class="stop" ng-repeat="stop in vm.route.stops track by stop.id" ng-class="{'is-delivered': stop.delivered_at}">
+          <span class="stop__number">{{stop.sequence}}</span>
+          <div class="row__main">
+            <p class="row__title">{{stop.order.customer_name}}</p>
+            <p class="row__detail">{{stop.order.address}}</p>
+            <p class="row__detail row__detail--note" ng-if="stop.order.notes">{{stop.order.notes}}</p>
+          </div>
+          <div class="row__side">
+            <span class="stop__time" ng-if="stop.delivered_at">Entregado a las {{stop.delivered_at | date:'h:mm a'}}</span>
+            <button type="button" class="button button--outline" ng-if="!stop.delivered_at"
+                    ng-click="vm.deliver(stop)" ng-disabled="vm.delivering[stop.id]"
+                    aria-label="Marcar entregado el pedido de {{stop.order.customer_name}}">
+              {{vm.delivering[stop.id] ? 'Guardando…' : 'Marcar entregado'}}
+            </button>
+          </div>
+        </li>
+      </ol>
+    </div>
+  </div>
+
+  <div class="mapwrap">
+    <div id="route-map" class="map" role="application" aria-label="Mapa de la ruta"></div>
+  </div>
+</section>

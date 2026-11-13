@@ -1,0 +1,95 @@
+<section class="workspace">
+  <div class="panel">
+    <header class="panel__header">
+      <h1>Planificar ruta</h1>
+      <p class="panel__summary">Elige los pedidos que salen en este recorrido.</p>
+    </header>
+
+    <p class="notice" ng-if="vm.loading">Cargando pedidos pendientes…</p>
+    <div class="notice notice--error" role="alert" ng-if="vm.loadError">
+      {{vm.loadError}}
+      <button type="button" class="button button--quiet" ng-click="vm.retry()">Reintentar</button>
+    </div>
+
+    <div ng-if="!vm.loading && !vm.loadError">
+      <div class="empty" ng-if="!vm.orders.length">
+        <p>No hay pedidos pendientes.</p>
+        <a class="button button--outline" href="#!/pedidos">Crear un pedido</a>
+      </div>
+
+      <div ng-if="vm.orders.length">
+        <p class="notice" ng-if="vm.engineUnavailable">
+          Tu navegador no pudo cargar la vista previa; la ruta se calculará en el servidor.
+        </p>
+
+        <!-- Comparison computed in the browser by the C++ engine -->
+        <div class="compare" aria-live="polite">
+          <p class="compare__empty" ng-if="!vm.preview && !vm.engineUnavailable">
+            Elige dos o más pedidos para comparar el recorrido.
+          </p>
+          <div ng-if="vm.preview">
+            <div class="compare__line">
+              <span class="compare__name">Sin optimizar</span>
+              <span class="compare__value">{{vm.preview.naiveKm | km}}</span>
+              <span class="compare__bar compare__bar--naive" style="width: 100%"></span>
+            </div>
+            <div class="compare__line">
+              <span class="compare__name">Optimizada</span>
+              <span class="compare__value">{{vm.preview.optimizedKm | km}}</span>
+              <span class="compare__bar compare__bar--optimized" ng-style="{width: vm.preview.ratioPercent + '%'}"></span>
+            </div>
+            <p class="compare__saving" ng-if="vm.preview.savedKm > 0.05">
+              Ahorro: {{vm.preview.savedKm | km}} ({{vm.preview.savedPercent}} %)
+            </p>
+            <p class="compare__saving compare__saving--none" ng-if="vm.preview.savedKm <= 0.05">
+              El orden actual ya es el más corto.
+            </p>
+            <p class="compare__source">Calculado al instante en tu navegador con C++ y WebAssembly.</p>
+          </div>
+        </div>
+
+        <div class="picker__bar">
+          <button type="button" class="link" ng-click="vm.toggleAll()">
+            {{vm.allSelected() ? 'Quitar todos' : 'Seleccionar todos'}}
+          </button>
+          <span>{{vm.selectedCount()}} de {{vm.orders.length}} elegidos</span>
+        </div>
+
+        <ul class="rows rows--pick">
+          <li class="row" ng-repeat="order in vm.orders track by order.id" ng-class="{'is-picked': vm.selected[order.id]}">
+            <label class="pick">
+              <input type="checkbox" ng-model="vm.selected[order.id]" ng-change="vm.refresh()">
+              <span class="pick__number" aria-hidden="true">{{vm.positionOf(order) || ''}}</span>
+              <span class="row__main">
+                <span class="row__title">{{order.customer_name}}</span>
+                <span class="row__detail">{{order.address}}</span>
+              </span>
+            </label>
+          </li>
+        </ul>
+
+        <div class="confirm">
+          <label for="planner-driver">Repartidor</label>
+          <select id="planner-driver" ng-model="vm.driverId"
+                  ng-options="driver.id as driver.name for driver in vm.drivers"></select>
+          <p class="notice" ng-if="!vm.drivers.length">Este negocio no tiene repartidores. Créalos desde el panel de administración.</p>
+          <p class="notice notice--error" ng-if="vm.tooMany()">
+            Una ruta admite hasta {{vm.maxStops}} pedidos. Quita {{vm.selectedCount() - vm.maxStops}}.
+          </p>
+          <p class="notice notice--error" role="alert" ng-if="vm.confirmError">{{vm.confirmError}}</p>
+          <button type="button" class="button button--large" ng-click="vm.confirm()" ng-disabled="!vm.canConfirm()">
+            {{vm.confirming ? 'Calculando en el servidor…' : 'Confirmar ruta'}}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mapwrap">
+    <div id="planner-map" class="map" role="application" aria-label="Mapa de la ruta"></div>
+    <ul class="legend" ng-if="vm.preview">
+      <li><span class="legend__line legend__line--naive"></span>Sin optimizar</li>
+      <li><span class="legend__line legend__line--optimized"></span>Optimizada</li>
+    </ul>
+  </div>
+</section>

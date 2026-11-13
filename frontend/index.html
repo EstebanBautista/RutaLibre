@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es" ng-app="rutalibre">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RutaLibre · Planificador de entregas</title>
+  <meta name="description" content="Planifica las entregas del día: RutaLibre calcula el recorrido más corto con un motor en C++ compilado a WebAssembly.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body ng-controller="ShellController as shell" ng-class="{'is-signed-in': shell.isAuthenticated()}">
+
+  <header class="topbar" ng-if="shell.isAuthenticated()">
+    <a class="wordmark" href="#!/pedidos">Ruta<span>Libre</span></a>
+    <nav class="topbar__nav" aria-label="Secciones">
+      <a href="#!/pedidos" ng-class="{'is-current': shell.isActive('/pedidos')}">Pedidos</a>
+      <a href="#!/planificar" ng-class="{'is-current': shell.isActive('/planificar')}">Planificar ruta</a>
+      <a href="#!/rutas" ng-class="{'is-current': shell.isActive('/rutas')}">Rutas</a>
+    </nav>
+    <div class="topbar__account">
+      <span class="topbar__business" ng-if="shell.business">{{shell.business.name}}</span>
+      <button type="button" class="button button--quiet" ng-if="shell.business.is_demo" ng-click="shell.askReset()">Restablecer demo</button>
+      <button type="button" class="button button--quiet" ng-click="shell.logout()">Salir</button>
+    </div>
+  </header>
+
+  <main ng-view></main>
+
+  <footer class="colophon" ng-if="shell.isAuthenticated()">
+    <p>
+      Las rutas se calculan con un motor en C++ compilado a WebAssembly.
+      El mismo motor corre en tu navegador para la vista previa y en el servidor para la ruta definitiva.
+    </p>
+    <p>
+      <a ng-href="{{shell.config.REPO_URL}}" target="_blank" rel="noopener">Código en GitHub</a>
+      <a ng-href="{{shell.config.OPTIMIZER_DOCS_URL}}" target="_blank" rel="noopener">API del optimizador</a>
+    </p>
+  </footer>
+
+  <dialog id="reset-dialog" class="dialog">
+    <h2>Restablecer el demo</h2>
+    <p>Se borran las rutas y los pedidos actuales y vuelven los 12 pedidos originales. Otros visitantes comparten esta cuenta.</p>
+    <p class="notice notice--error" ng-if="shell.resetError">{{shell.resetError}}</p>
+    <div class="dialog__actions">
+      <button type="button" class="button button--quiet" ng-click="shell.closeReset()">Cancelar</button>
+      <button type="button" class="button" ng-click="shell.confirmReset()" ng-disabled="shell.resetting">
+        {{shell.resetting ? 'Restableciendo…' : 'Restablecer demo'}}
+      </button>
+    </div>
+  </dialog>
+
+  <script src="vendor/angular.min.js"></script>
+  <script src="vendor/angular-route.min.js"></script>
+  <script src="vendor/leaflet.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/engine-loader.js"></script>
+  <script src="js/app.js"></script>
+  <script src="js/services/auth.service.js"></script>
+  <script src="js/services/api.service.js"></script>
+  <script src="js/services/map.service.js"></script>
+  <script src="js/services/engine.service.js"></script>
+  <script src="js/controllers/shell.controller.js"></script>
+  <script src="js/controllers/login.controller.js"></script>
+  <script src="js/controllers/orders.controller.js"></script>
+  <script src="js/controllers/planner.controller.js"></script>
+  <script src="js/controllers/routes.controller.js"></script>
+  <script src="js/controllers/route-detail.controller.js"></script>
+</body>
+</html>
