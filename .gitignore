@@ -1,0 +1,13 @@
+.tools/
+.superpowers/
+.venv/
+__pycache__/
+*.pyc
+db.sqlite3
+.env
+.env.local
+.vercel/
+node_modules/
+engine/build/
+staticfiles/
+.pytest_cache/
