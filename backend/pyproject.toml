@@ -1,0 +1,27 @@
+[project]
+name = "rutalibre-backend"
+version = "0.1.0"
+description = "API principal de RutaLibre (Django + Django REST Framework)"
+requires-python = ">=3.12"
+dependencies = [
+    "Django>=5.2,<5.3",
+    "djangorestframework>=3.16",
+    "djangorestframework-simplejwt>=5.4",
+    "django-cors-headers>=4.6",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.8",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-django>=4.9",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+pythonpath = ["."]
+testpaths = ["tests"]
+filterwarnings = ["ignore:No directory at:UserWarning"]
