@@ -1,0 +1,21 @@
+[project]
+name = "rutalibre-optimizer"
+version = "0.1.0"
+description = "Servicio de optimización de rutas de RutaLibre (FastAPI + motor C++ en WebAssembly)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "wasmtime>=25",
+    "pyjwt>=2.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "httpx2",
+    "uvicorn>=0.30",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
