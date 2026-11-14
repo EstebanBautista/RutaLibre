@@ -56,6 +56,32 @@ Puntos de diseño:
 - **El servidor no confía en el navegador.** La vista previa es solo informativa; la ruta guardada sale del cálculo del servidor.
 - **Fallos del optimizador** (caída, timeout de 10 s, respuesta inválida) se convierten en un 502 con un mensaje claro, y no se guarda nada.
 
+## Fotos de evidencia (S3 con URLs prefirmadas)
+
+La foto nunca pasa por Django: va del navegador al bucket.
+
+```mermaid
+sequenceDiagram
+    participant N as Navegador
+    participant D as Django
+    participant S as Bucket S3 (Backblaze B2)
+    N->>N: reduce la foto a 1600 px, JPEG 0,8
+    N->>D: POST .../photo/upload-url/ + JWT
+    D-->>N: URL PUT prefirmada (5 min) y clave elegida por el servidor
+    N->>S: PUT de la imagen con Content-Type image/jpeg
+    N->>D: POST .../photo/ {key}
+    D->>S: HEAD: ¿existe? ¿≤ 2 MB? ¿image/jpeg?
+    D->>D: guarda la clave en la parada y borra la foto anterior
+    D-->>N: detalle de la ruta con URL GET prefirmada (1 h)
+```
+
+- **El servidor elige la clave** (`businesses/{negocio}/routes/{ruta}/stops/{parada}/{uuid}.jpg`) y al confirmar exige ese prefijo exacto: nadie puede adjuntar un objeto de otra parada o de otro negocio.
+- **El bucket es privado.** Leer una foto exige una URL firmada que vence.
+- **CORS del bucket:** solo `PUT` y `GET` desde el frontend desplegado y `localhost:5500`. Otros orígenes reciben 403.
+- **Checksums:** `boto3` reciente añade una cabecera CRC32 a las subidas firmadas que Backblaze rechaza; el cliente se configura con `request_checksum_calculation="when_required"`.
+- **Fallas aisladas:** si el bucket no responde, pedir o confirmar una foto da 502, pero entregar y ver la ruta siguen funcionando. Sin variables `S3_*`, las fotos se desactivan y el botón no aparece.
+- **Restablecer demo** borra todo el prefijo del negocio demo, para que los visitantes no llenen los 10 GB gratuitos.
+
 ## Autenticación
 
 - Django emite JWT HS256 con `djangorestframework-simplejwt` (acceso de 12 h).
@@ -72,7 +98,7 @@ Todo viewset hereda de `BusinessScopedMixin`, que filtra el queryset por el nego
 | Servicio | Proyecto Vercel | Variables |
 |---|---|---|
 | Frontend | `rutalibre` | ninguna (URLs en `frontend/js/config.js`) |
-| API | `rutalibre-api` | `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `OPTIMIZER_URL`, `CORS_ALLOWED_ORIGINS` |
+| API | `rutalibre-api` | `DATABASE_URL`, `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `OPTIMIZER_URL`, `CORS_ALLOWED_ORIGINS`, `S3_ENDPOINT_URL`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` |
 | Optimizador | `rutalibre-optimizer` | `JWT_SIGNING_KEY`, `CORS_ALLOWED_ORIGINS` |
 
-Las migraciones y los datos demo se aplican contra Neon desde una máquina local (`python manage.py migrate` y `seed_demo` con `DATABASE_URL` en `backend/.env.local`). De todos modos, el login demo crea los datos si faltan.
+Cada push a `main` despliega solo, así que una migración se aplica a Neon **antes** del push. Las migraciones y los datos demo se aplican contra Neon desde una máquina local (`python manage.py migrate` y `seed_demo` con `DATABASE_URL` en `backend/.env.local`). De todos modos, el login demo crea los datos si faltan.

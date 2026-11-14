@@ -174,3 +174,35 @@ Idempotente: si `delivered_at` ya tiene valor, no cambia nada. Con `select_for_u
 **Preguntas**
 - Si cambias `route.cpp` y olvidas recompilar el `.wasm`, ¿qué detecta el CI y qué no?
 - ¿Qué variables tiene que compartir el backend con el optimizador?
+
+---
+
+## 8. Fotos de evidencia y URLs prefirmadas
+
+**Archivos:** `backend/core/storage.py`, `backend/core/photos.py`, `frontend/js/photo-utils.js`, `frontend/js/services/photo.service.js`, `backend/tests/test_storage.py`, `backend/tests/test_photos.py`
+
+### Qué es una URL prefirmada
+
+Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `X-Amz-Expires`). Quien la tenga puede hacer **esa** operación (un `PUT` de **ese** objeto con **ese** `Content-Type`) hasta que venza, sin conocer las claves. Así el navegador sube directo al bucket y las claves nunca salen del servidor.
+
+### El flujo
+
+1. `photo.service.js` reduce la imagen con un `canvas` (`RLPhoto.fitWithin`) y la convierte a JPEG.
+2. `POST .../photo/upload-url/` → `photos.request_upload()` inventa la clave con un `uuid4` y firma un `PUT` de 5 minutos.
+3. El navegador hace el `PUT`. El interceptor de Angular **no** añade el JWT, porque la URL no es de nuestra API: el bucket no debe recibir el token.
+4. `POST .../photo/` → `photos.confirm_upload()` valida el nombre de la clave con una expresión regular, bloquea la parada (`select_for_update`), hace `HEAD` y valida tamaño y tipo. Si algo falla, borra el objeto. Si todo va bien, guarda la clave y después borra la foto anterior.
+5. El detalle de la ruta trae `photo_url`, un `GET` firmado por 1 hora.
+
+### Detalles que vale la pena entender
+
+- `storage.head()` distingue "no existe la foto" de "no existe el bucket": un `HEAD` no trae cuerpo, así que ambos responden 404; ante un 404 se consulta el bucket.
+- `request_checksum_calculation="when_required"`: sin esto, `boto3` reciente firma una cabecera CRC32 que Backblaze rechaza en subidas prefirmadas.
+- Confirmar dos veces la misma clave no hace nada (doble clic seguro).
+- `reset_demo()` borra el prefijo del negocio demo; si el bucket falla, solo lo registra y el reset sigue.
+- `moto` intercepta las llamadas de `boto3` y simula S3 en memoria: los tests no usan red ni cuenta.
+
+**Preguntas**
+- ¿Por qué el servidor elige la clave del objeto y no el navegador?
+- ¿Qué pasaría si se confirmara la foto sin hacer `HEAD`?
+- ¿Por qué se borra la foto anterior **después** de guardar la nueva y no antes?
+- ¿Qué cambiarías para usar AWS S3 en lugar de Backblaze?
