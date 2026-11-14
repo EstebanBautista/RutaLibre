@@ -19,3 +19,7 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.uv]
+# An application, not a library: install the dependencies, never build a wheel.
+package = false

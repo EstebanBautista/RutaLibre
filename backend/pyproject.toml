@@ -25,3 +25,7 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 pythonpath = ["."]
 testpaths = ["tests"]
 filterwarnings = ["ignore:No directory at:UserWarning"]
+
+[tool.uv]
+# An application, not a library: install the dependencies, never build a wheel.
+package = false
