@@ -79,7 +79,7 @@ cd frontend
 python -m http.server 5500
 ```
 
-Abre <http://localhost:5500> y pulsa **Entrar al demo**. Las fotos de evidencia se activan solo si defines las variables `S3_*` de `backend/.env.example`; sin ellas, todo lo demás funciona igual. Las variables de entorno opcionales están en `backend/.env.example` y `optimizer/.env.example`; sin ellas, ambos servicios usan la misma clave de desarrollo.
+Abre <http://localhost:5500> y pulsa **Entrar al demo**. Las fotos de evidencia se activan solo si defines las variables `S3_*` de `backend/.env.example`; sin ellas, todo lo demás funciona igual. No hace falta configurar nada: sin variables de entorno, ambos servicios comparten una clave de desarrollo y aceptan peticiones desde `localhost:5500`. Las variables opcionales están en `backend/.env.example` y `optimizer/.env.example`.
 
 ### Tests
 

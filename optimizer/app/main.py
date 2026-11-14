@@ -26,6 +26,8 @@ app = FastAPI(
 )
 
 _origins = [origin.strip() for origin in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if origin.strip()]
+if not _origins and os.environ.get("VERCEL") != "1":
+    _origins = ["http://localhost:5500", "http://127.0.0.1:5500"]  # local default
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_origins,

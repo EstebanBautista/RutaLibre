@@ -12,6 +12,18 @@ import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+# Same development-only key the Django backend uses when nothing is configured,
+# so both services work together locally with zero setup. Never used on Vercel.
+_DEV_KEY = "dev-only-insecure-key-do-not-use-in-production-0123456789abcdef"
+
+
+def _signing_key() -> str:
+    configured = os.environ.get("JWT_SIGNING_KEY", "")
+    if configured:
+        return configured
+    return "" if os.environ.get("VERCEL") == "1" else _DEV_KEY
+
+
 _bearer = HTTPBearer(auto_error=False, description="Token de acceso emitido por el backend de RutaLibre")
 
 
@@ -28,7 +40,7 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bea
     if credentials is None:
         raise _unauthorized("Falta el token de acceso")
 
-    signing_key = os.environ.get("JWT_SIGNING_KEY", "")
+    signing_key = _signing_key()
     if not signing_key:
         # Refuse everything rather than accept tokens signed with an empty key.
         raise _unauthorized("El servicio no tiene clave de verificación configurada")

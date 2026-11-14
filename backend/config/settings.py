@@ -132,8 +132,11 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
 }
 
-# Browser origins allowed to call the API (the deployed frontend, and localhost).
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
+# Browser origins allowed to call the API. Locally, with nothing configured,
+# the frontend served on port 5500 is allowed so the README steps just work.
+CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS") or (
+    [] if IS_PRODUCTION else ["http://localhost:5500", "http://127.0.0.1:5500"]
+)
 
 # --- Optimizer service -----------------------------------------------------
 
