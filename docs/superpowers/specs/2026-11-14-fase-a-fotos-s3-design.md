@@ -138,3 +138,17 @@ funcionando.
 - Nombres exactos de funciones del módulo de almacenamiento.
 - Cómo aplicar las reglas CORS del bucket: por API S3 si B2 lo acepta; si no, desde el panel.
 - Diseño visual del botón y de la miniatura de la foto.
+
+## Cambios tras la revisión final (2026-11-14, aprobados por Esteban)
+
+La revisión independiente marcó como crítico que un visitante podía llenar el bucket y como
+importante que en B2 borrar no liberaba espacio. Cambios sobre el diseño anterior:
+
+- `POST .../photo/upload-url/` recibe `{size}`; el servidor rechaza tamaños fuera de 1..2 MB y
+  firma `Content-Length`.
+- La URL apunta a `uploads/{negocio}/routes/{ruta}/stops/{parada}/{uuid}.jpg`. Al confirmar, el
+  servidor copia a `businesses/…` y borra la temporal.
+- Límite por negocio: 30 URLs por minuto y 200 por día (`UploadGrant`, migración 0003). Respuesta
+  429 con mensaje.
+- Borrados por versión (`list_object_versions` + `VersionId`).
+- Regla de ciclo de vida del bucket: `uploads/` expira en 1 día.

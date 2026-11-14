@@ -193,6 +193,13 @@ Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `
 4. `POST .../photo/` → `photos.confirm_upload()` valida el nombre de la clave con una expresión regular, bloquea la parada (`select_for_update`), hace `HEAD` y valida tamaño y tipo. Si algo falla, borra el objeto. Si todo va bien, guarda la clave y después borra la foto anterior.
 5. El detalle de la ruta trae `photo_url`, un `GET` firmado por 1 hora.
 
+### Lo que corrigió la revisión final
+
+1. **Tamaño firmado:** `presigned_put(key, size)` firma `ContentLength`. El navegador envía `blob.size` al pedir la URL; si sube otra cantidad de bytes, Backblaze responde 403.
+2. **Zona temporal:** el navegador sube a `uploads/…`. `confirm_upload` valida y hace `storage.copy()` a `businesses/…`. La URL de subida sigue vigente unos minutos, pero ya no puede tocar la foto confirmada.
+3. **Límite:** cada URL entregada crea una fila `UploadGrant`. Con 30 en el último minuto o 200 en el día, la API responde 429. Se cuenta en base de datos porque Vercel corre varias instancias y la memoria no se comparte.
+4. **Versiones:** en Backblaze un borrado simple solo oculta el archivo. `_delete_versions()` lista primero todas las versiones y marcadores y luego los borra por `VersionId`. Primero lista y después borra: borrar mientras se pagina se salta objetos (lo detectó el test de 1005 objetos).
+
 ### Detalles que vale la pena entender
 
 - `storage.head()` distingue "no existe la foto" de "no existe el bucket": un `HEAD` no trae cuerpo, así que ambos responden 404; ante un 404 se consulta el bucket.
@@ -206,3 +213,5 @@ Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `
 - ¿Qué pasaría si se confirmara la foto sin hacer `HEAD`?
 - ¿Por qué se borra la foto anterior **después** de guardar la nueva y no antes?
 - ¿Qué cambiarías para usar AWS S3 en lugar de Backblaze?
+- ¿Por qué no basta con validar el tamaño con `HEAD` al confirmar, si además se firma el tamaño?
+- ¿Por qué el límite de subidas no se guarda en la caché en memoria de Django?

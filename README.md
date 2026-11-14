@@ -14,7 +14,7 @@ Planificador de entregas para pequeños negocios. El negocio registra sus pedido
 2. **Planificar ruta:** al elegir pedidos, el navegador ejecuta el motor C++ y muestra al instante la ruta en el orden de la lista contra la ruta optimizada, con los kilómetros ahorrados.
 3. **Confirmar:** el backend Django pide el cálculo definitivo al servicio FastAPI, que ejecuta **el mismo motor** en el servidor, y guarda la ruta.
 4. **Entregar:** en el detalle de la ruta se marca cada parada. La ruta pasa a "En curso" y luego a "Completada".
-5. **Evidencia:** cada parada admite una foto. El navegador la reduce y la sube directo a un bucket compatible con S3 con una URL prefirmada; el backend la verifica antes de guardarla.
+5. **Evidencia:** cada parada admite una foto. El navegador la reduce y la sube directo a un bucket compatible con S3 con una URL prefirmada que fija el tamaño (máximo 2 MB); el backend la verifica y la mueve a su ubicación final. Hay un tope de 30 subidas por minuto y 200 por día por negocio.
 
 ## Arquitectura
 
@@ -52,7 +52,7 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md) y en las decision
 | C++ | [`engine/src/route.cpp`](engine/src/route.cpp): haversine, vecino más cercano y 2-opt, sin memoria dinámica; exportado a WebAssembly y usado desde Python y JavaScript |
 | AWS: S3 e IAM | **Código real:** [`core/storage.py`](backend/core/storage.py) y [`core/photos.py`](backend/core/photos.py) usan `boto3` con URLs prefirmadas PUT/GET, `HEAD` para validar, borrado por prefijo y CORS del bucket. Bucket privado y clave limitada a un bucket (mínimo privilegio, ver [política IAM equivalente](#camino-a-aws)). Corre contra Backblaze B2, compatible con S3 |
 | AWS: EC2, RDS | Diseño en [Camino a AWS](#camino-a-aws); infraestructura como código en la fase B |
-| Pruebas | 30 comprobaciones del motor, 27 tests del optimizador, 109 del backend (S3 simulado con `moto`), 17 del frontend |
+| Pruebas | 330 comprobaciones del motor, 29 tests del optimizador, 134 del backend (S3 simulado con `moto`, con versiones como Backblaze), 17 del frontend |
 | Revisión de código y CI | [GitHub Actions](.github/workflows/ci.yml): motor nativo y en wasm, optimizador con el wasm recién compilado, backend, frontend |
 | Documentación técnica | Este README, [`docs/architecture.md`](docs/architecture.md), [ADRs](docs/adr/), [`docs/EXPLICACION.md`](docs/EXPLICACION.md) |
 
@@ -84,8 +84,8 @@ Abre <http://localhost:5500> y pulsa **Entrar al demo**. Las fotos de evidencia 
 ### Tests
 
 ```bash
-cd backend   && pytest           # 109 tests (S3 simulado con moto)
-cd optimizer && pytest           # 27 tests
+cd backend   && pytest           # 134 tests (S3 simulado con moto)
+cd optimizer && pytest           # 29 tests
 node --test "frontend/tests/*.mjs"
 python engine/build.py --test    # requiere Emscripten
 ```

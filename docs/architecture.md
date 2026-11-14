@@ -66,21 +66,29 @@ sequenceDiagram
     participant D as Django
     participant S as Bucket S3 (Backblaze B2)
     N->>N: reduce la foto a 1600 px, JPEG 0,8
-    N->>D: POST .../photo/upload-url/ + JWT
-    D-->>N: URL PUT prefirmada (5 min) y clave elegida por el servidor
-    N->>S: PUT de la imagen con Content-Type image/jpeg
+    N->>D: POST .../photo/upload-url/ {size} + JWT
+    D->>D: ¿size ≤ 2 MB? ¿menos de 30 subidas en el último minuto y 200 en el día?
+    D-->>N: URL PUT prefirmada (5 min) a uploads/…, con el tamaño exacto firmado
+    N->>S: PUT de la imagen a uploads/…
     N->>D: POST .../photo/ {key}
     D->>S: HEAD: ¿existe? ¿≤ 2 MB? ¿image/jpeg?
-    D->>D: guarda la clave en la parada y borra la foto anterior
+    D->>S: copia a businesses/… (el navegador nunca tuvo URL para esta clave)
+    D->>D: guarda la clave final en la parada
+    D->>S: borra la temporal y la foto anterior (todas sus versiones)
     D-->>N: detalle de la ruta con URL GET prefirmada (1 h)
 ```
 
-- **El servidor elige la clave** (`businesses/{negocio}/routes/{ruta}/stops/{parada}/{uuid}.jpg`) y al confirmar exige ese prefijo exacto: nadie puede adjuntar un objeto de otra parada o de otro negocio.
+- **Dos zonas en el bucket.** El navegador solo escribe en `uploads/{negocio}/…`. Las fotos confirmadas viven en `businesses/{negocio}/…`, adonde solo copia el servidor. Así una foto ya validada no se puede sobrescribir con la URL de subida, que sigue vigente unos minutos.
+- **El tamaño va dentro de la firma.** El navegador declara cuántos bytes subirá y el servidor lo firma como `Content-Length`; Backblaze rechaza con 403 cualquier cuerpo de otro tamaño. Sin esto, una URL prefirmada acepta hasta 5 GB.
+- **Límite de subidas por negocio:** 30 por minuto y 200 por día, contadas en la tabla `UploadGrant` (no en memoria: Vercel corre varias instancias). En el peor caso, 400 MB al día. El reset del demo no borra ese historial.
+- **Limpieza automática:** una regla de ciclo de vida del bucket elimina lo que quede en `uploads/` tras un día (subidas nunca confirmadas).
+- **Borrar de verdad.** Backblaze guarda versiones: un borrado simple solo oculta el archivo y el espacio sigue ocupado. `storage.delete` y `delete_prefix` eliminan cada versión y cada marcador.
+- **El servidor elige la clave** y al confirmar exige el prefijo exacto de la parada: nadie puede adjuntar un objeto de otra parada o de otro negocio.
 - **El bucket es privado.** Leer una foto exige una URL firmada que vence.
 - **CORS del bucket:** solo `PUT` y `GET` desde el frontend desplegado y `localhost:5500`. Otros orígenes reciben 403.
 - **Checksums:** `boto3` reciente añade una cabecera CRC32 a las subidas firmadas que Backblaze rechaza; el cliente se configura con `request_checksum_calculation="when_required"`.
 - **Fallas aisladas:** si el bucket no responde, pedir o confirmar una foto da 502, pero entregar y ver la ruta siguen funcionando. Sin variables `S3_*`, las fotos se desactivan y el botón no aparece.
-- **Restablecer demo** borra todo el prefijo del negocio demo, para que los visitantes no llenen los 10 GB gratuitos.
+- **Restablecer demo** borra las dos zonas del negocio demo (`businesses/` y `uploads/`), con todas sus versiones.
 
 ## Autenticación
 

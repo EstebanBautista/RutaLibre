@@ -15,6 +15,16 @@ La vacante pide experiencia con AWS (S3, IAM) y el proyecto solo lo documentaba.
 - Clave de aplicación limitada a ese bucket: el equivalente a una política IAM de mínimo privilegio.
 - Tests con `moto`, que simula S3 en memoria.
 
+### Ajustes tras la revisión final (2026-11-14)
+
+La revisión independiente encontró que un visitante podía llenar el bucket: la URL prefirmada no limitaba el tamaño, no había tope de URLs y la URL seguía sirviendo para sobrescribir la foto ya confirmada. También que, en Backblaze, borrar no liberaba espacio. Se corrigió así:
+
+- El navegador declara el tamaño y el servidor lo firma como `Content-Length` (máximo 2 MB). Verificado contra Backblaze: un cuerpo distinto recibe 403.
+- La subida va a `uploads/…`; al confirmar, el servidor copia el objeto a `businesses/…`, donde el navegador nunca puede escribir.
+- Máximo 30 URLs por minuto y 200 por día por negocio, contadas en base de datos.
+- Regla de ciclo de vida: `uploads/` se limpia sola tras un día.
+- Los borrados eliminan todas las versiones del objeto.
+
 ## Consecuencias
 
 - El mismo código sirve contra AWS S3 cambiando solo variables de entorno.
