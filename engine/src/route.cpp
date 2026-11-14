@@ -123,11 +123,27 @@ double optimize(const double* coords, int n, int* order_out) {
   if (n < 0 || n > kMaxStops) return -1.0;
   if (n == 0) return 0.0;
   build_matrix(coords, n + 1);
-  int tour[kMaxNodes + 1];
-  nearest_neighbor(tour, n);
-  two_opt(tour, n);
-  for (int k = 0; k < n; ++k) order_out[k] = tour[k + 1] - 1;
-  return circuit_length(tour, n);
+
+  // Candidate 1: greedy nearest-neighbor start, then 2-opt.
+  int greedy[kMaxNodes + 1];
+  nearest_neighbor(greedy, n);
+  two_opt(greedy, n);
+  double greedy_km = circuit_length(greedy, n);
+
+  // Candidate 2: the order received, then 2-opt. 2-opt never lengthens a
+  // circuit, so keeping the shorter candidate guarantees the result is never
+  // longer than the order the user listed.
+  int listed[kMaxNodes + 1];
+  listed[0] = 0;
+  for (int k = 1; k <= n; ++k) listed[k] = k;
+  listed[n + 1] = 0;
+  two_opt(listed, n);
+  double listed_km = circuit_length(listed, n);
+
+  // Ties keep the greedy candidate, so results stay deterministic.
+  const int* best = listed_km < greedy_km - kImprovementEpsilon ? listed : greedy;
+  for (int k = 0; k < n; ++k) order_out[k] = best[k + 1] - 1;
+  return best == listed ? listed_km : greedy_km;
 }
 
 }  // namespace rl

@@ -142,7 +142,75 @@ static void test_optimize_is_deterministic() {
   for (int i = 0; i < 12; ++i) CHECK(a[i] == b[i]);
 }
 
+// Test-only 2-opt from a given order, used to build inputs whose order is
+// already good (a local optimum). Independent from the engine on purpose.
+static void local_two_opt(const double* coords, int n, int* order) {
+  auto node = [&](int k) { return k == 0 || k == n + 1 ? 0 : order[k - 1] + 1; };
+  auto dist = [&](int a, int b) {
+    return rl::haversine_km(coords[2 * a], coords[2 * a + 1], coords[2 * b], coords[2 * b + 1]);
+  };
+  bool improved = true;
+  while (improved) {
+    improved = false;
+    for (int i = 1; i < n; ++i) {
+      for (int j = i + 1; j <= n; ++j) {
+        double delta = dist(node(i - 1), node(j)) + dist(node(i), node(j + 1)) -
+                       dist(node(i - 1), node(i)) - dist(node(j), node(j + 1));
+        if (delta < -1e-9) {
+          for (int a = i - 1, b = j - 1; a < b; ++a, --b) {
+            int tmp = order[a];
+            order[a] = order[b];
+            order[b] = tmp;
+          }
+          improved = true;
+        }
+      }
+    }
+  }
+}
+
+// A business that already lists its orders in a good sequence must never get
+// a longer "optimized" route back. Regression for a review finding: with
+// nearest neighbor + 2-opt alone, many such inputs came back longer.
+static void test_optimize_never_worse_than_an_already_good_input() {
+  const int n = 12;
+  int failures_before = g_failures;
+  for (unsigned seed = 1; seed <= 150; ++seed) {
+    double coords[2 * (n + 1)];
+    fill_random(coords, n, seed);
+
+    // A random visiting order, then improved until 2-opt finds nothing.
+    int order[n];
+    fill_identity(order, n);
+    g_seed = seed * 7919u;
+    for (int i = n - 1; i > 0; --i) {
+      int j = static_cast<int>(next_unit() * (i + 1));
+      int tmp = order[i];
+      order[i] = order[j];
+      order[j] = tmp;
+    }
+    local_two_opt(coords, n, order);
+
+    // Rewrite the input so that this good order is the order received.
+    double listed[2 * (n + 1)];
+    listed[0] = coords[0];
+    listed[1] = coords[1];
+    for (int k = 0; k < n; ++k) {
+      listed[2 * (k + 1)] = coords[2 * (order[k] + 1)];
+      listed[2 * (k + 1) + 1] = coords[2 * (order[k] + 1) + 1];
+    }
+    int identity[n];
+    fill_identity(identity, n);
+    int result[n];
+    double optimized = rl::optimize(listed, n, result);
+    CHECK(optimized <= rl::tour_km(listed, identity, n) + 1e-9);
+    CHECK(is_permutation(result, n));
+    if (g_failures - failures_before > 6) break;  // keep the output readable
+  }
+}
+
 int main() {
+  test_optimize_never_worse_than_an_already_good_input();
   test_haversine_same_point_is_zero();
   test_haversine_cali_bogota();
   test_optimize_zero_stops();
