@@ -44,7 +44,8 @@
         }
         var paths = $window.RLPhoto.photoPaths(routeId, stopId);
         return shrink(file).then(function (blob) {
-          return ApiService.post(paths.uploadUrl).then(function (grant) {
+          // The exact size is signed into the URL: the bucket refuses any other size.
+          return ApiService.post(paths.uploadUrl, { size: blob.size }).then(function (grant) {
             // A plain $http call to another host: the interceptor only adds the
             // session token to our own API, and the bucket must not receive it.
             return $http.put(grant.upload_url, blob, {

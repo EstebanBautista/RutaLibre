@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 
 LATITUDE_VALIDATORS = [MinValueValidator(-90.0), MaxValueValidator(90.0)]
 LONGITUDE_VALIDATORS = [MinValueValidator(-180.0), MaxValueValidator(180.0)]
@@ -109,3 +110,18 @@ class RouteStop(models.Model):
 
     def __str__(self) -> str:
         return f"{self.route_id} #{self.sequence}"
+
+
+class UploadGrant(models.Model):
+    """One row per photo upload URL handed out. Used to cap uploads per business.
+
+    These rows are kept when the demo is reset, so resetting cannot be used to
+    get around the daily limit.
+    """
+
+    business = models.ForeignKey(Business, on_delete=models.CASCADE, related_name="upload_grants")
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        verbose_name = "permiso de subida"
+        verbose_name_plural = "permisos de subida"

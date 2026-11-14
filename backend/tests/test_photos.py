@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 import boto3
 import pytest
+from django.utils import timezone
 from moto import mock_aws
 
-from core import demo, storage
-from core.models import Order, Route, RouteStop
+from core import demo, photos, storage
+from core.models import Order, Route, RouteStop, UploadGrant
 from core.storage import StorageError
 
 pytestmark = pytest.mark.django_db
@@ -18,22 +21,26 @@ CONFIG = {
     "secret_access_key": "testing",
 }
 EMPTY_CONFIG = {name: "" for name in CONFIG}
+ONE_MB = 1024 * 1024
 
 NO_OBJECT = "No se encontró la foto subida. Vuelve a intentarlo."
 WRONG_STOP = "La foto no corresponde a esta parada."
 TOO_BIG = "La foto supera 2 MB."
 NOT_JPEG = "La foto debe ser JPEG."
+NO_SIZE = "Falta el tamaño de la foto."
+TOO_MANY = "Se subieron demasiadas fotos en poco tiempo. Espera un momento e intenta de nuevo."
 DISABLED = "Las fotos de evidencia no están configuradas en este servidor."
 STORAGE_DOWN = "El almacenamiento de fotos no responde. La entrega no se ve afectada; intenta de nuevo."
 
 
 @pytest.fixture
 def s3(settings):
-    """A mocked S3 with an empty bucket, and settings that point at it."""
+    """A mocked S3 bucket that keeps versions like Backblaze B2, and settings that point at it."""
     with mock_aws():
         settings.S3 = dict(CONFIG)
         client = boto3.client("s3", region_name="us-east-1", aws_access_key_id="testing", aws_secret_access_key="testing")
         client.create_bucket(Bucket=BUCKET)
+        client.put_bucket_versioning(Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"})
         storage._client.cache_clear()
         yield client
         storage._client.cache_clear()
@@ -54,8 +61,9 @@ def stop_ids(route):
     return [stop.id for stop in route.stops.all()]
 
 
-def upload_url(client, route, stop_id):
-    return client.post(f"/api/routes/{route.id}/stops/{stop_id}/photo/upload-url/")
+def upload_url(client, route, stop_id, size=100):
+    body = {} if size is None else {"size": size}
+    return client.post(f"/api/routes/{route.id}/stops/{stop_id}/photo/upload-url/", body, format="json")
 
 
 def confirm(client, route, stop_id, key):
@@ -66,36 +74,56 @@ def put_object(s3, key, size=100, content_type="image/jpeg"):
     s3.put_object(Bucket=BUCKET, Key=key, Body=b"x" * size, ContentType=content_type)
 
 
-def exists(s3, key):
-    return storage.head(key) is not None
+def versions(s3, prefix):
+    page = s3.list_object_versions(Bucket=BUCKET, Prefix=prefix)
+    return page.get("Versions", []) + page.get("DeleteMarkers", [])
 
 
 def stop_in(response, stop_id):
     return next(stop for stop in response.json()["stops"] if stop["id"] == stop_id)
 
 
-def prefix_for(business, route, stop_id):
-    return f"businesses/{business.id}/routes/{route.id}/stops/{stop_id}/"
+def path_of(business, route, stop_id):
+    return f"{business.id}/routes/{route.id}/stops/{stop_id}/"
 
 
-def fresh_key(business, route, stop_id, name="a" * 32):
-    return f"{prefix_for(business, route, stop_id)}{name}.jpg"
+def temp_key(business, route, stop_id, name="a" * 32):
+    """Where the browser uploads: a temporary area."""
+    return f"uploads/{path_of(business, route, stop_id)}{name}.jpg"
+
+
+def final_key(business, route, stop_id, name="a" * 32):
+    """Where a confirmed photo lives; the browser never gets a URL to write here."""
+    return f"businesses/{path_of(business, route, stop_id)}{name}.jpg"
+
+
+def upload_and_confirm(client, s3, business, route, stop_id, name="a" * 32, size=100):
+    put_object(s3, temp_key(business, route, stop_id, name), size=size)
+    return confirm(client, route, stop_id, temp_key(business, route, stop_id, name))
 
 
 # --- asking for an upload URL --------------------------------------------
 
 
-def test_upload_url_has_a_key_inside_the_stops_prefix(client_a, business_a, route, s3):
+def test_upload_url_points_to_the_temporary_area_of_the_stop(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
 
     response = upload_url(client_a, route, first)
 
     assert response.status_code == 200
     data = response.json()
-    assert data["key"].startswith(prefix_for(business_a, route, first))
+    assert data["key"].startswith(f"uploads/{path_of(business_a, route, first)}")
     assert data["key"].endswith(".jpg")
     assert data["headers"] == {"Content-Type": "image/jpeg"}
     assert "X-Amz-Signature=" in data["upload_url"]
+
+
+def test_upload_url_signs_the_declared_size(client_a, route, s3):
+    first, _ = stop_ids(route)
+
+    url = upload_url(client_a, route, first, size=1234).json()["upload_url"]
+
+    assert "content-length" in url.split("X-Amz-SignedHeaders=")[1].split("&")[0]
 
 
 def test_each_upload_url_gets_a_new_key(client_a, route, s3):
@@ -106,27 +134,109 @@ def test_each_upload_url_gets_a_new_key(client_a, route, s3):
     assert len(keys) == 3
 
 
+def test_a_declared_size_over_two_megabytes_is_rejected(client_a, route, s3):
+    first, _ = stop_ids(route)
+
+    response = upload_url(client_a, route, first, size=2 * ONE_MB + 1)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": TOO_BIG}
+
+
+def test_a_declared_size_of_exactly_two_megabytes_is_accepted(client_a, route, s3):
+    first, _ = stop_ids(route)
+
+    assert upload_url(client_a, route, first, size=2 * ONE_MB).status_code == 200
+
+
+@pytest.mark.parametrize("size", [None, 0, -5, "abc", True, 1.5])
+def test_a_missing_or_invalid_size_is_rejected(client_a, route, s3, size):
+    first, _ = stop_ids(route)
+
+    response = upload_url(client_a, route, first, size=size)
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": NO_SIZE}
+
+
+# --- upload limits --------------------------------------------------------
+
+
+def test_more_than_thirty_upload_urls_in_a_minute_are_refused(client_a, business_a, route, s3):
+    first, _ = stop_ids(route)
+    UploadGrant.objects.bulk_create(UploadGrant(business=business_a) for _ in range(30))
+
+    response = upload_url(client_a, route, first)
+
+    assert response.status_code == 429
+    assert response.json() == {"detail": TOO_MANY}
+
+
+def test_more_than_two_hundred_upload_urls_in_a_day_are_refused(client_a, business_a, route, s3):
+    first, _ = stop_ids(route)
+    UploadGrant.objects.bulk_create(UploadGrant(business=business_a) for _ in range(200))
+    UploadGrant.objects.update(created_at=timezone.now() - timedelta(hours=2))
+
+    assert upload_url(client_a, route, first).status_code == 429
+
+
+def test_upload_urls_older_than_a_day_do_not_count(client_a, business_a, route, s3):
+    first, _ = stop_ids(route)
+    UploadGrant.objects.bulk_create(UploadGrant(business=business_a) for _ in range(200))
+    UploadGrant.objects.update(created_at=timezone.now() - timedelta(hours=25))
+
+    assert upload_url(client_a, route, first).status_code == 200
+
+
+def test_the_limit_is_per_business(client_a, business_b, route, s3):
+    first, _ = stop_ids(route)
+    UploadGrant.objects.bulk_create(UploadGrant(business=business_b) for _ in range(200))
+
+    assert upload_url(client_a, route, first).status_code == 200
+
+
+def test_each_upload_url_counts_towards_the_limit(client_a, business_a, route, s3):
+    first, _ = stop_ids(route)
+
+    upload_url(client_a, route, first)
+    upload_url(client_a, route, first)
+
+    assert UploadGrant.objects.filter(business=business_a).count() == 2
+
+
 # --- confirming an upload -------------------------------------------------
 
 
-def test_upload_then_confirm_stores_the_photo(client_a, route, s3):
+def test_confirm_moves_the_photo_out_of_the_temporary_area(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = upload_url(client_a, route, first).json()["key"]
-    put_object(s3, key)
 
-    response = confirm(client_a, route, first, key)
+    response = upload_and_confirm(client_a, s3, business_a, route, first)
 
     assert response.status_code == 200
     stop = stop_in(response, first)
     assert "X-Amz-Signature=" in stop["photo_url"]
     assert stop["photo_uploaded_at"] is not None
-    assert RouteStop.objects.get(pk=first).photo_key == key
+    assert RouteStop.objects.get(pk=first).photo_key == final_key(business_a, route, first)
+    assert storage.head(final_key(business_a, route, first)) is not None
+    assert versions(s3, temp_key(business_a, route, first)) == []
+
+
+def test_writing_again_to_the_upload_url_after_confirming_does_not_change_the_photo(
+    client_a, business_a, route, s3
+):
+    first, _ = stop_ids(route)
+    upload_and_confirm(client_a, s3, business_a, route, first, size=100)
+
+    # The browser's signed URL is still valid for a few minutes: use it again.
+    put_object(s3, temp_key(business_a, route, first), size=5 * ONE_MB, content_type="image/png")
+
+    assert storage.head(final_key(business_a, route, first)).size == 100
 
 
 def test_confirming_without_uploading_is_rejected(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
 
-    response = confirm(client_a, route, first, fresh_key(business_a, route, first))
+    response = confirm(client_a, route, first, temp_key(business_a, route, first))
 
     assert response.status_code == 400
     assert response.json() == {"detail": NO_OBJECT}
@@ -135,21 +245,30 @@ def test_confirming_without_uploading_is_rejected(client_a, business_a, route, s
 
 def test_a_key_from_another_stop_is_rejected(client_a, business_a, route, s3):
     first, second = stop_ids(route)
-    foreign_key = fresh_key(business_a, route, second)
-    put_object(s3, foreign_key)
+    put_object(s3, temp_key(business_a, route, second))
 
-    response = confirm(client_a, route, first, foreign_key)
+    response = confirm(client_a, route, first, temp_key(business_a, route, second))
 
     assert response.status_code == 400
     assert response.json() == {"detail": WRONG_STOP}
     assert RouteStop.objects.get(pk=first).photo_key == ""
 
 
+def test_a_key_outside_the_temporary_area_is_rejected(client_a, business_a, route, s3):
+    first, _ = stop_ids(route)
+    put_object(s3, final_key(business_a, route, first))
+
+    response = confirm(client_a, route, first, final_key(business_a, route, first))
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": WRONG_STOP}
+
+
 @pytest.mark.parametrize("suffix", ["../../other.jpg", "abc.jpg", "a" * 32 + ".png", "a" * 32 + ".jpg/extra"])
 def test_keys_that_are_not_ours_are_rejected(client_a, business_a, route, s3, suffix):
     first, _ = stop_ids(route)
 
-    response = confirm(client_a, route, first, prefix_for(business_a, route, first) + suffix)
+    response = confirm(client_a, route, first, f"uploads/{path_of(business_a, route, first)}{suffix}")
 
     assert response.status_code == 400
     assert response.json() == {"detail": WRONG_STOP}
@@ -165,72 +284,59 @@ def test_a_missing_key_in_the_body_is_rejected(client_a, route, s3):
 
 def test_a_photo_over_two_megabytes_is_rejected_and_deleted(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key, size=2 * 1024 * 1024 + 1)
 
-    response = confirm(client_a, route, first, key)
+    response = upload_and_confirm(client_a, s3, business_a, route, first, size=2 * ONE_MB + 1)
 
     assert response.status_code == 400
     assert response.json() == {"detail": TOO_BIG}
-    assert not exists(s3, key)
+    assert versions(s3, temp_key(business_a, route, first)) == []
     assert RouteStop.objects.get(pk=first).photo_key == ""
 
 
 def test_a_photo_of_exactly_two_megabytes_is_accepted(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key, size=2 * 1024 * 1024)
 
-    assert confirm(client_a, route, first, key).status_code == 200
+    assert upload_and_confirm(client_a, s3, business_a, route, first, size=2 * ONE_MB).status_code == 200
 
 
 def test_a_file_that_is_not_jpeg_is_rejected_and_deleted(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key, content_type="image/png")
+    put_object(s3, temp_key(business_a, route, first), content_type="image/png")
 
-    response = confirm(client_a, route, first, key)
+    response = confirm(client_a, route, first, temp_key(business_a, route, first))
 
     assert response.status_code == 400
     assert response.json() == {"detail": NOT_JPEG}
-    assert not exists(s3, key)
+    assert versions(s3, temp_key(business_a, route, first)) == []
 
 
-def test_a_new_photo_replaces_and_deletes_the_old_one(client_a, business_a, route, s3):
+def test_a_new_photo_replaces_and_frees_the_old_one(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    old_key = fresh_key(business_a, route, first, "a" * 32)
-    new_key = fresh_key(business_a, route, first, "b" * 32)
-    put_object(s3, old_key)
-    put_object(s3, new_key)
+    upload_and_confirm(client_a, s3, business_a, route, first, name="a" * 32)
 
-    confirm(client_a, route, first, old_key)
-    confirm(client_a, route, first, new_key)
+    upload_and_confirm(client_a, s3, business_a, route, first, name="b" * 32)
 
-    assert not exists(s3, old_key)
-    assert exists(s3, new_key)
-    assert RouteStop.objects.get(pk=first).photo_key == new_key
+    assert versions(s3, final_key(business_a, route, first, "a" * 32)) == []
+    assert storage.head(final_key(business_a, route, first, "b" * 32)) is not None
+    assert RouteStop.objects.get(pk=first).photo_key == final_key(business_a, route, first, "b" * 32)
 
 
 def test_confirming_the_same_key_twice_keeps_the_photo(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key)
 
-    first_try = confirm(client_a, route, first, key)
-    second_try = confirm(client_a, route, first, key)
+    first_try = upload_and_confirm(client_a, s3, business_a, route, first)
+    second_try = confirm(client_a, route, first, temp_key(business_a, route, first))
 
     assert first_try.status_code == 200
     assert second_try.status_code == 200
-    assert exists(s3, key)
-    assert RouteStop.objects.get(pk=first).photo_key == key
+    assert storage.head(final_key(business_a, route, first)) is not None
+    assert RouteStop.objects.get(pk=first).photo_key == final_key(business_a, route, first)
 
 
 def test_a_photo_does_not_change_the_delivery_state(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key)
 
-    response = confirm(client_a, route, first, key)
+    response = upload_and_confirm(client_a, s3, business_a, route, first)
 
     assert stop_in(response, first)["delivered_at"] is None
     assert response.json()["status"] == "planned"
@@ -247,20 +353,23 @@ def test_another_business_cannot_ask_for_an_upload_url(client_b, route, s3):
 
 def test_another_business_cannot_confirm_a_photo(client_b, business_a, route, s3):
     first, _ = stop_ids(route)
-    key = fresh_key(business_a, route, first)
-    put_object(s3, key)
+    put_object(s3, temp_key(business_a, route, first))
 
-    assert confirm(client_b, route, first, key).status_code == 404
+    assert confirm(client_b, route, first, temp_key(business_a, route, first)).status_code == 404
     assert RouteStop.objects.get(pk=first).photo_key == ""
 
 
-def test_a_stop_must_belong_to_the_route_in_the_url(client_a, business_a, route, make_driver, make_order, s3):
+def test_a_stop_must_belong_to_the_route_in_the_url(client_a, business_a, route, s3):
     first, _ = stop_ids(route)
     other_route = Route.objects.create(
         business=business_a, driver=route.driver, date="2026-11-14", total_km=1, naive_km=1
     )
 
-    assert client_a.post(f"/api/routes/{other_route.id}/stops/{first}/photo/upload-url/").status_code == 404
+    response = client_a.post(
+        f"/api/routes/{other_route.id}/stops/{first}/photo/upload-url/", {"size": 100}, format="json"
+    )
+
+    assert response.status_code == 404
 
 
 def test_requests_without_a_token_are_rejected(anon_client, route, s3):
@@ -290,7 +399,7 @@ def test_without_configuration_the_upload_url_is_a_503(client_a, route, photos_o
 def test_without_configuration_confirming_is_a_503(client_a, business_a, route, photos_off):
     first, _ = stop_ids(route)
 
-    assert confirm(client_a, route, first, fresh_key(business_a, route, first)).status_code == 503
+    assert confirm(client_a, route, first, temp_key(business_a, route, first)).status_code == 503
 
 
 def test_without_configuration_the_business_says_photos_are_disabled(client_a, photos_off):
@@ -340,7 +449,7 @@ def test_a_storage_failure_when_confirming_is_a_502(client_a, business_a, route,
 
     monkeypatch.setattr(storage, "head", broken)
 
-    response = confirm(client_a, route, first, fresh_key(business_a, route, first))
+    response = confirm(client_a, route, first, temp_key(business_a, route, first))
 
     assert response.status_code == 502
     assert response.json() == {"detail": STORAGE_DOWN}
@@ -367,17 +476,27 @@ def test_a_storage_failure_does_not_break_the_route_detail_or_delivery(client_a,
 # --- demo reset -----------------------------------------------------------
 
 
-def test_reset_demo_deletes_the_demo_photos_and_only_those(s3):
+def test_reset_demo_frees_the_demo_photos_and_uploads_and_only_those(s3):
     user = demo.ensure_demo()
-    demo_prefix = f"businesses/{user.business.id}/"
-    put_object(s3, demo_prefix + "routes/1/stops/1/" + "a" * 32 + ".jpg")
-    put_object(s3, demo_prefix + "routes/1/stops/2/" + "b" * 32 + ".jpg")
+    business_id = user.business.id
+    put_object(s3, f"businesses/{business_id}/routes/1/stops/1/" + "a" * 32 + ".jpg")
+    put_object(s3, f"uploads/{business_id}/routes/1/stops/2/" + "b" * 32 + ".jpg")
     put_object(s3, "businesses/99999/routes/1/stops/1/" + "c" * 32 + ".jpg")
 
     demo.reset_demo()
 
-    keys = [item["Key"] for item in s3.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
-    assert keys == ["businesses/99999/routes/1/stops/1/" + "c" * 32 + ".jpg"]
+    assert versions(s3, f"businesses/{business_id}/") == []
+    assert versions(s3, f"uploads/{business_id}/") == []
+    assert len(versions(s3, "businesses/99999/")) == 1
+
+
+def test_reset_demo_keeps_the_upload_limit_history(s3):
+    user = demo.ensure_demo()
+    UploadGrant.objects.bulk_create(UploadGrant(business=user.business) for _ in range(5))
+
+    demo.reset_demo()
+
+    assert UploadGrant.objects.filter(business=user.business).count() == 5
 
 
 def test_reset_demo_still_restores_the_data_when_the_bucket_fails(s3, monkeypatch):
@@ -403,3 +522,8 @@ def test_reset_demo_without_configuration_does_not_touch_storage(photos_off, mon
     demo.reset_demo()
 
     assert Order.objects.count() == 12
+
+
+def test_photos_module_exposes_the_limits():
+    assert photos.MAX_UPLOADS_PER_MINUTE == 30
+    assert photos.MAX_UPLOADS_PER_DAY == 200

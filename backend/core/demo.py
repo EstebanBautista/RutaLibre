@@ -12,6 +12,7 @@ from django.db import transaction
 
 from core import storage
 from core.models import Business, Driver, Order, Route
+from core.photos import business_prefixes
 
 logger = logging.getLogger(__name__)
 
@@ -95,10 +96,11 @@ def _delete_demo_photos(business: Business) -> None:
     """
     if not storage.is_configured():
         return
-    try:
-        storage.delete_prefix(f"businesses/{business.id}/")
-    except storage.StorageError:
-        logger.warning("Could not delete the demo photos from storage")
+    for prefix in business_prefixes(business.id):
+        try:
+            storage.delete_prefix(prefix)
+        except storage.StorageError:
+            logger.warning("Could not delete %s from storage", prefix)
 
 
 def is_demo_user(user) -> bool:

@@ -210,7 +210,8 @@ class RouteViewSet(
     def photo_upload_url(self, request, pk=None, stop_id=None):
         """Step 1 of attaching a photo: a short-lived URL the browser uploads to."""
         route = self.get_object()
-        return Response(photos.request_upload(self._stop_of(route, stop_id)))
+        size = request.data.get("size") if isinstance(request.data, dict) else None
+        return Response(photos.request_upload(self._stop_of(route, stop_id), size))
 
     @action(detail=True, methods=["post"], url_path=r"stops/(?P<stop_id>\d+)/photo")
     def photo(self, request, pk=None, stop_id=None):

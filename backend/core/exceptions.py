@@ -34,3 +34,9 @@ class StorageDown(APIException):
     status_code = status.HTTP_502_BAD_GATEWAY
     default_detail = "El almacenamiento de fotos no responde. La entrega no se ve afectada; intenta de nuevo."
     default_code = "storage_unavailable"
+
+
+class TooManyUploads(APIException):
+    status_code = status.HTTP_429_TOO_MANY_REQUESTS
+    default_detail = "Se subieron demasiadas fotos en poco tiempo. Espera un momento e intenta de nuevo."
+    default_code = "too_many_uploads"

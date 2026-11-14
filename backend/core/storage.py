@@ -86,15 +86,18 @@ def _bucket() -> str:
     return settings.S3["bucket"]
 
 
-def presigned_put(key: str, content_type: str = PHOTO_CONTENT_TYPE, expires: int = UPLOAD_URL_TTL) -> str:
+def presigned_put(
+    key: str, size: int, content_type: str = PHOTO_CONTENT_TYPE, expires: int = UPLOAD_URL_TTL
+) -> str:
     """URL the browser uses to PUT the image straight into the bucket.
 
-    The Content-Type is part of the signature, so the upload must send exactly it.
+    Both the Content-Type and the exact size are part of the signature, so the
+    bucket rejects an upload with any other type or any other number of bytes.
     """
     try:
         return _client().generate_presigned_url(
             "put_object",
-            Params={"Bucket": _bucket(), "Key": key, "ContentType": content_type},
+            Params={"Bucket": _bucket(), "Key": key, "ContentType": content_type, "ContentLength": size},
             ExpiresIn=expires,
         )
     except (BotoCoreError, ClientError) as exc:
@@ -131,25 +134,52 @@ def head(key: str) -> ObjectInfo | None:
     return ObjectInfo(size=response["ContentLength"], content_type=response.get("ContentType", ""))
 
 
-def delete(key: str) -> None:
-    """Deletes an object. Deleting one that is already gone is not an error."""
+def copy(source_key: str, target_key: str) -> None:
+    """Server-side copy inside the bucket (the bytes never leave the storage)."""
     try:
-        _client().delete_object(Bucket=_bucket(), Key=key)
+        _client().copy_object(
+            Bucket=_bucket(),
+            Key=target_key,
+            CopySource={"Bucket": _bucket(), "Key": source_key},
+            MetadataDirective="COPY",
+        )
     except (BotoCoreError, ClientError) as exc:
         raise StorageError(str(exc)) from exc
+
+
+def _delete_versions(prefix: str, exact_key: str | None = None) -> int:
+    """Deletes every version and delete marker under prefix.
+
+    Backblaze B2 buckets keep versions: a plain DeleteObject only hides the
+    file behind a delete marker and the space stays in use. Deleting each
+    version by id is what actually frees it. Returns how many object versions
+    (not markers) were removed.
+    """
+    client = _client()
+    try:
+        # List everything first: deleting while paginating shifts the pages
+        # and silently skips objects.
+        targets, removed = [], 0
+        paginator = client.get_paginator("list_object_versions")
+        for page in paginator.paginate(Bucket=_bucket(), Prefix=prefix):
+            for kind in ("Versions", "DeleteMarkers"):
+                for entry in page.get(kind, []):
+                    if exact_key is not None and entry["Key"] != exact_key:
+                        continue
+                    targets.append({"Key": entry["Key"], "VersionId": entry["VersionId"]})
+                    removed += kind == "Versions"
+        for start in range(0, len(targets), 1000):
+            client.delete_objects(Bucket=_bucket(), Delete={"Objects": targets[start:start + 1000], "Quiet": True})
+    except (BotoCoreError, ClientError) as exc:
+        raise StorageError(str(exc)) from exc
+    return removed
+
+
+def delete(key: str) -> None:
+    """Deletes an object for good (all its versions). Missing objects are fine."""
+    _delete_versions(key, exact_key=key)
 
 
 def delete_prefix(prefix: str) -> int:
     """Deletes every object whose key starts with prefix. Returns how many."""
-    client = _client()
-    deleted = 0
-    try:
-        paginator = client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=_bucket(), Prefix=prefix):
-            keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
-            if keys:
-                client.delete_objects(Bucket=_bucket(), Delete={"Objects": keys, "Quiet": True})
-                deleted += len(keys)
-    except (BotoCoreError, ClientError) as exc:
-        raise StorageError(str(exc)) from exc
-    return deleted
+    return _delete_versions(prefix)
