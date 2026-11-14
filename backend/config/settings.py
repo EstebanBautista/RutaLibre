@@ -140,6 +140,17 @@ CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS")
 OPTIMIZER_URL = os.environ.get("OPTIMIZER_URL", "http://localhost:8001").rstrip("/")
 OPTIMIZER_TIMEOUT_SECONDS = 10.0
 
+# --- Delivery photos: S3-compatible storage (Backblaze B2 in production) ----
+# If any value is missing, photos are simply turned off.
+
+S3 = {
+    "endpoint_url": os.environ.get("S3_ENDPOINT_URL", ""),
+    "region": os.environ.get("S3_REGION", ""),
+    "bucket": os.environ.get("S3_BUCKET", ""),
+    "access_key_id": os.environ.get("S3_ACCESS_KEY_ID", ""),
+    "secret_access_key": os.environ.get("S3_SECRET_ACCESS_KEY", ""),
+}
+
 # --- Production hardening --------------------------------------------------
 
 if IS_PRODUCTION:
