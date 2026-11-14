@@ -519,3 +519,31 @@ input[type='text'], input[type='password'], select {
 @media (prefers-reduced-motion: reduce) {
   .compare__bar, .progress__track span { transition: none; }
 }
+
+/* ---------- Evidence photos on a route stop ---------- */
+
+/* The photo controls sit on their own line under the stop's text. */
+.stop { flex-wrap: wrap; }
+.stop__photo {
+  order: 3;
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-left: 44px; /* lines up with the stop's text, past the number badge */
+  font-size: 0.9375rem;
+}
+.stop__photo .notice { flex-basis: 100%; margin: 0; font-size: 0.8125rem; }
+.stop__photo label { margin: 0; cursor: pointer; font-weight: 500; }
+.stop__photo label.is-busy { opacity: 0.6; pointer-events: none; }
+/* The file input is hidden but stays reachable by keyboard: show its focus on the label. */
+.stop__photo label:focus-within { outline: 3px solid var(--yellow); outline-offset: 2px; }
+.stop__thumb {
+  display: block;
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border: 1px solid var(--kerb);
+  border-radius: 4px;
+}

@@ -53,6 +53,18 @@
             <p class="row__detail">{{stop.order.address}}</p>
             <p class="row__detail row__detail--note" ng-if="stop.order.notes">{{stop.order.notes}}</p>
           </div>
+          <div class="stop__photo" ng-if="vm.photosEnabled || stop.photo_url">
+            <a ng-if="stop.photo_url" ng-href="{{stop.photo_url}}" target="_blank" rel="noopener"
+               aria-label="Ver la foto de evidencia de {{stop.order.customer_name}}">
+              <img class="stop__thumb" ng-src="{{stop.photo_url}}" alt="" ng-on-error="vm.hidePhoto(stop)">
+            </a>
+            <label class="link" ng-if="vm.photosEnabled" ng-class="{'is-busy': vm.uploading[stop.id]}">
+              {{vm.uploading[stop.id] ? 'Subiendo foto…' : (stop.photo_uploaded_at ? 'Cambiar foto' : 'Adjuntar foto')}}
+              <input type="file" accept="image/*" capture="environment" class="visually-hidden"
+                     photo-picker="vm.attachPhoto(stop, file)" ng-disabled="vm.uploading[stop.id]">
+            </label>
+            <p class="notice notice--error" role="alert" ng-if="vm.photoError[stop.id]">{{vm.photoError[stop.id]}}</p>
+          </div>
           <div class="row__side">
             <span class="stop__time" ng-if="stop.delivered_at">Entregado a las {{stop.delivered_at | date:'h:mm a'}}</span>
             <button type="button" class="button button--outline" ng-if="!stop.delivered_at"
