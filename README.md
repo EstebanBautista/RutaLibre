@@ -34,6 +34,8 @@ flowchart LR
 | Interfaz | AngularJS 1.8, Leaflet, OpenStreetMap | [`frontend/`](frontend/) | <https://rutalibre-chi.vercel.app> |
 | Base de datos | PostgreSQL | — | Neon (plan gratuito) |
 
+Cada push a `main` despliega los tres proyectos de Vercel automáticamente.
+
 Más detalle en [`docs/architecture.md`](docs/architecture.md) y en las decisiones de [`docs/adr/`](docs/adr/).
 
 ## Requisitos de la vacante y dónde están
@@ -116,7 +118,6 @@ Hoy esta sección es diseño, no código. La hoja de ruta lo implementa por fase
 - **Fase D:** vista propia del repartidor, registro de usuarios, edición del depósito.
 - **Fase E:** LocalStack para probar S3 e IAM en local.
 - **Fase F:** distancias por carretera en lugar de línea recta.
-- Despliegue automático en cada push: hoy el despliegue se hace con el CLI de Vercel.
 
 ## Limitaciones conocidas
 
