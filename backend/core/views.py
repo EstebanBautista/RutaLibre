@@ -8,6 +8,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from core import photos
 from core.demo import ensure_demo, reset_demo
 from core.exceptions import BadRequest, Conflict, OptimizerDown
 from core.models import Driver, Order, Route, RouteStop
@@ -200,4 +201,23 @@ class RouteViewSet(
                 remaining = route.stops.filter(delivered_at__isnull=True).count()
                 new_status = Route.Status.DONE if remaining == 0 else Route.Status.IN_PROGRESS
                 Route.objects.filter(pk=route.pk).update(status=new_status)
+        return self._detail_response(route.pk)
+
+    def _stop_of(self, route, stop_id) -> RouteStop:
+        return get_object_or_404(RouteStop.objects.select_related("route"), pk=stop_id, route=route)
+
+    @action(detail=True, methods=["post"], url_path=r"stops/(?P<stop_id>\d+)/photo/upload-url")
+    def photo_upload_url(self, request, pk=None, stop_id=None):
+        """Step 1 of attaching a photo: a short-lived URL the browser uploads to."""
+        route = self.get_object()
+        return Response(photos.request_upload(self._stop_of(route, stop_id)))
+
+    @action(detail=True, methods=["post"], url_path=r"stops/(?P<stop_id>\d+)/photo")
+    def photo(self, request, pk=None, stop_id=None):
+        """Step 2: the upload is done; check it and attach it to the stop."""
+        route = self.get_object()
+        key = request.data.get("key")
+        if not isinstance(key, str) or not key:
+            raise BadRequest("Falta la clave de la foto.")
+        photos.confirm_upload(self._stop_of(route, stop_id), key)
         return self._detail_response(route.pk)

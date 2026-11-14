@@ -95,6 +95,9 @@ class RouteStop(models.Model):
     order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name="stop")
     sequence = models.PositiveIntegerField()  # 1-based position in the route
     delivered_at = models.DateTimeField(null=True, blank=True)
+    # Evidence photo: the object key inside the storage bucket (empty = no photo).
+    photo_key = models.CharField(max_length=200, blank=True, default="")
+    photo_uploaded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["sequence"]

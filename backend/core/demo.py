@@ -5,10 +5,15 @@ The demo user has no usable password; the only way in is the public
 can be restored to the original state at any time with reset_demo().
 """
 
+import logging
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 
+from core import storage
 from core.models import Business, Driver, Order, Route
+
+logger = logging.getLogger(__name__)
 
 DEMO_USERNAME = "demo"
 DEMO_BUSINESS_NAME = "Panadería La Espiga"
@@ -80,6 +85,20 @@ def reset_demo() -> None:
     business.depot_lat, business.depot_lng = DEMO_DEPOT
     business.save()
     _create_data(business)
+    _delete_demo_photos(business)
+
+
+def _delete_demo_photos(business: Business) -> None:
+    """Empties the demo's folder in the bucket so visitors cannot fill it up.
+
+    A storage failure is logged, never raised: the reset itself must succeed.
+    """
+    if not storage.is_configured():
+        return
+    try:
+        storage.delete_prefix(f"businesses/{business.id}/")
+    except storage.StorageError:
+        logger.warning("Could not delete the demo photos from storage")
 
 
 def is_demo_user(user) -> bool:

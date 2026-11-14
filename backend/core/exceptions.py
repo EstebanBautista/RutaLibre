@@ -22,3 +22,15 @@ class OptimizerDown(APIException):
     status_code = status.HTTP_502_BAD_GATEWAY
     default_detail = "El servicio de optimización no está disponible. Intenta de nuevo en unos segundos."
     default_code = "optimizer_unavailable"
+
+
+class PhotosDisabled(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "Las fotos de evidencia no están configuradas en este servidor."
+    default_code = "photos_disabled"
+
+
+class StorageDown(APIException):
+    status_code = status.HTTP_502_BAD_GATEWAY
+    default_detail = "El almacenamiento de fotos no responde. La entrega no se ve afectada; intenta de nuevo."
+    default_code = "storage_unavailable"

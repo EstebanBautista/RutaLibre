@@ -1,15 +1,20 @@
 from rest_framework import serializers
 
+from core import photos, storage
 from core.demo import is_demo_user
 from core.models import Business, Driver, Order, Route, RouteStop
 
 
 class BusinessSerializer(serializers.ModelSerializer):
     is_demo = serializers.SerializerMethodField()
+    photos_enabled = serializers.SerializerMethodField()
 
     class Meta:
         model = Business
-        fields = ["id", "name", "depot_lat", "depot_lng", "is_demo"]
+        fields = ["id", "name", "depot_lat", "depot_lng", "is_demo", "photos_enabled"]
+
+    def get_photos_enabled(self, business: Business) -> bool:
+        return storage.is_configured()
 
     def get_is_demo(self, business: Business) -> bool:
         return is_demo_user(business.owner)
@@ -46,10 +51,14 @@ class RouteCreateSerializer(serializers.Serializer):
 
 class RouteStopSerializer(serializers.ModelSerializer):
     order = serializers.SerializerMethodField()
+    photo_url = serializers.SerializerMethodField()
 
     class Meta:
         model = RouteStop
-        fields = ["id", "sequence", "delivered_at", "order"]
+        fields = ["id", "sequence", "delivered_at", "photo_url", "photo_uploaded_at", "order"]
+
+    def get_photo_url(self, stop: RouteStop) -> str | None:
+        return photos.view_url(stop)
 
     def get_order(self, stop: RouteStop) -> dict:
         order = stop.order
