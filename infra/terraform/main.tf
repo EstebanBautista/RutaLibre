@@ -11,3 +11,12 @@ module "network" {
   public_subnet_cidrs  = [cidrsubnet(var.vpc_cidr, 8, 0), cidrsubnet(var.vpc_cidr, 8, 1)]
   private_subnet_cidrs = [cidrsubnet(var.vpc_cidr, 8, 10), cidrsubnet(var.vpc_cidr, 8, 11)]
 }
+
+module "storage" {
+  source = "./modules/storage"
+
+  evidence_bucket_name = var.evidence_bucket_name
+  frontend_bucket_name = var.frontend_bucket_name
+  # Replaced by the CloudFront address once the edge module exists.
+  cors_allowed_origins = ["https://rutalibre-chi.vercel.app"]
+}

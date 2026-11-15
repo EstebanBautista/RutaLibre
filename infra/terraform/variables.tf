@@ -27,3 +27,15 @@ variable "vpc_cidr" {
   type        = string
   default     = "10.20.0.0/16"
 }
+
+variable "evidence_bucket_name" {
+  description = "Bucket for the delivery photos."
+  type        = string
+  default     = "rutalibre-evidencias"
+}
+
+variable "frontend_bucket_name" {
+  description = "Bucket for the static frontend."
+  type        = string
+  default     = "rutalibre-frontend"
+}
