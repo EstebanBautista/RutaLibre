@@ -55,6 +55,7 @@ locals {
     DB_PORT               = tostring(var.db_port)
     DB_NAME               = var.db_name
     S3_BUCKET             = var.evidence_bucket_name
+    PUBLIC_HOST           = var.public_host
     REPO_URL              = var.repo_url
     APP_GIT_REF           = var.app_git_ref
   }
@@ -68,7 +69,7 @@ locals {
 
 resource "aws_instance" "app" {
   #checkov:skip=CKV_AWS_126:Detailed (1-minute) monitoring is paid; 5-minute basic metrics are enough
-  ami                         = data.aws_ssm_parameter.al2023.value
+  ami                         = data.aws_ssm_parameter.al2023.insecure_value
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id
   vpc_security_group_ids      = [aws_security_group.app.id]
@@ -93,11 +94,24 @@ resource "aws_instance" "app" {
   }
 
   tags = { Name = "${var.name_prefix}-app" }
+
+  # The AMI parameter always points to the newest Amazon Linux 2023. Without
+  # this, every apply after a new release would replace the server.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 }
 
+# The Elastic IP is created on its own and associated afterwards. CloudFront
+# needs its address, and the instance needs CloudFront's host name in
+# user_data; tying the IP to the instance would make that a cycle.
 resource "aws_eip" "app" {
-  domain   = "vpc"
-  instance = aws_instance.app.id
+  domain = "vpc"
 
   tags = { Name = "${var.name_prefix}-app" }
+}
+
+resource "aws_eip_association" "app" {
+  allocation_id = aws_eip.app.id
+  instance_id   = aws_instance.app.id
 }

@@ -190,8 +190,9 @@ exclusiones. `infra/README.md` resume todas las excepciones en una tabla.
   estáticas; que `frontend/js/config.js` use el mismo origen; subir el frontend al bucket; correr
   migraciones.
 - **Límites de los tests:** los identificadores que calcula AWS se fijan con `override_resource`
-  para probar el cableado entre módulos (cambio tras la revisión final); `ALLOWED_HOSTS` depende del
-  dominio de CloudFront, que solo existe tras un primer `apply`, y lo pone un operador.
+  para probar el cableado entre módulos (cambio tras la revisión final). El dominio de CloudFront
+  llega a nginx, a `ALLOWED_HOSTS` y al CORS del bucket en el mismo `apply`: la IP elástica se asocia
+  aparte para evitar un ciclo.
 - **Costo estimado** si se aplicara (del orden de US$25–30 al mes; se verifica con la calculadora
   de AWS durante la implementación).
 

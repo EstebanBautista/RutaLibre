@@ -17,7 +17,7 @@ resource "aws_s3_bucket" "evidence" {
 
 resource "aws_s3_bucket" "frontend" {
   #checkov:skip=CKV_AWS_18:Access logs need a separate log bucket; out of scope for this design
-  #checkov:skip=CKV_AWS_144:Cross-region replication doubles storage cost; photos are evidence, not critical records
+  #checkov:skip=CKV_AWS_144:Cross-region replication doubles storage cost; the frontend is rebuilt from git
   #checkov:skip=CKV_AWS_145:SSE-S3 (AES256) encrypts at rest without a paid customer-managed KMS key
   #checkov:skip=CKV2_AWS_62:No consumer for bucket events
   bucket = var.frontend_bucket_name

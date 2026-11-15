@@ -126,7 +126,7 @@ Cada push a `main` despliega solo, así que una migración se aplica a Neon **an
 Decisiones de seguridad:
 
 - **Base de datos privada.** Sin IP pública, en subredes sin ruta a internet, y el puerto 5432 abierto solo al grupo de seguridad de la aplicación.
-- **Sin SSH.** La EC2 no tiene par de claves ni puerto 22; se administra con Session Manager. Solo CloudFront llega a su puerto 80.
+- **Sin SSH.** La EC2 no tiene par de claves ni puerto 22; se administra con Session Manager. Su puerto 80 solo acepta la red de CloudFront, y nginx y Django responden solo al dominio de nuestra distribución.
 - **IAM mínimo.** El rol de la instancia tiene tres políticas separadas por propósito; la de fotos lista exactamente las 6 acciones S3 que usa `storage.py`.
 - **Secretos fuera de Terraform.** RDS genera y guarda su contraseña; las claves de Django van en Parameter Store. Ningún secreto aparece en el código ni en el estado.
 

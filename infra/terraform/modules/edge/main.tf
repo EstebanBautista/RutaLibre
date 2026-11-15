@@ -15,12 +15,12 @@ data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
 
-# Forwards every header (including Host), query string and cookie to the API.
 # HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, ...
 data "aws_cloudfront_response_headers_policy" "security_headers" {
   name = "Managed-SecurityHeadersPolicy"
 }
 
+# Forwards every header (including Host), query string and cookie to the API.
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer"
 }
@@ -104,7 +104,7 @@ resource "aws_cloudfront_distribution" "this" {
   }
 }
 
-# Only this distribution may read the frontend bucket.
+# Only this distribution may read the frontend bucket, and only over TLS.
 resource "aws_s3_bucket_policy" "frontend" {
   bucket = var.frontend_bucket_id
 
@@ -118,6 +118,14 @@ resource "aws_s3_bucket_policy" "frontend" {
         Action    = "s3:GetObject"
         Resource  = "${var.frontend_bucket_arn}/*"
         Condition = { StringEquals = { "AWS:SourceArn" = aws_cloudfront_distribution.this.arn } }
+      },
+      {
+        Sid       = "DenyInsecureTransport"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource  = [var.frontend_bucket_arn, "${var.frontend_bucket_arn}/*"]
+        Condition = { Bool = { "aws:SecureTransport" = "false" } }
       }
     ]
   })

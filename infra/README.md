@@ -76,8 +76,8 @@ checkov -d . --framework terraform --compact --quiet
 | `network` | 2 + 2 subredes con los CIDR y zonas indicados; ninguna asigna IP pública automática; las privadas usan la tabla de rutas sin salida a internet |
 | `storage` | Ambos buckets: 4 bloqueos de acceso público, versiones, cifrado, sin ACL. Evidencias: CORS solo `PUT` y `GET` desde el origen dado; `uploads/` expira en 1 día; se niega todo acceso sin TLS. Frontend: versiones viejas expiran en 30 días |
 | `database` | No pública, cifrada, contraseña administrada (ninguna en el código), protección contra borrado, backups de 7 días, 5432 solo desde el grupo de la aplicación y nunca desde un CIDR, `rds.force_ssl`, registros de PostgreSQL |
-| `compute` | `t3.micro`, IMDSv2, disco cifrado, puerto 80 solo desde la lista de prefijos de CloudFront; acciones y recursos **exactos** de la política de fotos, sin comodines; lectura de parámetros limitada a `/rutalibre/prod`; Session Manager; el temporizador que refresca la contraseña rotada |
-| `edge` | HTTPS en todas las rutas; las 5 rutas de API van a la EC2 y le pasan la cabecera `Host`; el frontend es el origen por defecto y se lee con OAC; solo esta distribución puede leer el bucket del frontend; cabeceras de seguridad |
+| `compute` | `t3.micro`, IMDSv2, disco cifrado, puerto 80 solo desde la lista de prefijos de CloudFront; acciones y recursos **exactos** de la política de fotos, sin comodines; lectura de parámetros limitada a `/rutalibre/prod`; Session Manager; el temporizador que refresca la contraseña rotada; nginx y Django aceptan solo el dominio de esta distribución |
+| `edge` | HTTPS en todas las rutas; las 5 rutas de API van a la EC2 y le pasan la cabecera `Host`; el frontend es el origen por defecto y se lee con OAC; solo esta distribución puede leer el bucket del frontend y se niega todo acceso sin TLS; cabeceras de seguridad |
 | `stack` | El módulo raíz completo produce un plan, y el cableado entre módulos es seguro: la base de datos recibe solo las subredes privadas y solo el grupo de seguridad de la aplicación; la EC2 va en una subred pública |
 
 Las propiedades principales se comprobaron rompiéndolas a propósito (por ejemplo, poner `publicly_accessible = true`, añadir `s3:*` o pasar las subredes públicas a la base de datos) y viendo fallar el test.
@@ -87,7 +87,7 @@ Las propiedades principales se comprobaron rompiéndolas a propósito (por ejemp
 - **Los tests usan un proveedor simulado.** Prueban la configuración que Terraform enviaría, no que AWS la acepte. Un `apply` real podría encontrar errores que el plan no ve (cuotas, nombres de bucket ya tomados, combinaciones que la API rechaza).
 - **`bootstrap.sh` nunca se ejecutó** en una instancia real. Pasa `bash -n` y `shellcheck`, nada más.
 - **Los identificadores que asigna AWS** (subredes, grupos de seguridad) se fijan con `override_resource` en los tests: así se prueba a qué módulo llega cada uno, pero no los valores reales.
-- **`ALLOWED_HOSTS`** de Django depende del dominio de CloudFront, que solo existe tras el primer `apply`. Se resuelve con un parámetro (`.cloudfront.net`, ver abajo). El origen CORS del bucket, en cambio, sí se toma del dominio de CloudFront sin segunda pasada.
+- **El dominio de CloudFront** llega al servidor (nginx y `ALLOWED_HOSTS`) y al CORS del bucket en el mismo `apply`. Para eso la IP elástica se crea aparte y se asocia después a la instancia; atarla a la instancia crearía un ciclo (lo detecta `terraform validate`).
 
 ## Qué faltaría para aplicarlo de verdad
 
@@ -96,7 +96,7 @@ Las propiedades principales se comprobaron rompiéndolas a propósito (por ejemp
    - `backend/config/settings.py` reconoce producción solo con `VERCEL=1`; habría que añadir otra señal (por ejemplo `APP_ENV=production`).
    - `backend/core/storage.py` exige `S3_ENDPOINT_URL` y claves estáticas; en EC2 debe usar las credenciales del rol (sin claves ni endpoint).
    - `frontend/js/config.js` debería usar el mismo origen (`/api`) cuando no está en Vercel ni en local.
-2. **Parámetros** en Parameter Store, bajo `/rutalibre/prod/` (tipo `SecureString`): `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `ALLOWED_HOSTS=.cloudfront.net`, `APP_ENV=production`.
+2. **Parámetros** en Parameter Store, bajo `/rutalibre/prod/` (tipo `SecureString`): `DJANGO_SECRET_KEY`, `JWT_SIGNING_KEY`, `APP_ENV=production`.
 3. **Estado remoto:** copiar `backend.tf.example` a `backend.tf` y crear antes ese bucket.
 4. **Frontend:** `aws s3 sync frontend/ s3://rutalibre-frontend/` y una invalidación de CloudFront.
 5. **Migraciones:** las corre el servicio `rutalibre-api` al arrancar (`ExecStartPre`).
@@ -116,6 +116,15 @@ Las propiedades principales se comprobaron rompiéndolas a propósito (por ejemp
 | Secrets Manager | 1 secreto | 0,40 |
 | S3, CloudFront, CloudWatch Logs | Tráfico de demo, dentro de las capas gratuitas | ~0 |
 | **Total** | | **~27** |
+
+## Cómo destruirlo
+
+`terraform destroy` no borra todo a la primera, a propósito:
+
+- **RDS** tiene protección contra borrado: primero hay que aplicar `deletion_protection = false`.
+- Al borrarla, RDS deja un **snapshot final** (`rutalibre-prod-final`) que **sigue cobrando** almacenamiento hasta que se elimine a mano.
+- Los **buckets** tienen versiones y no usan `force_destroy`: hay que vaciarlos, con todas sus versiones, antes de destruirlos.
+- El **grupo de registros** de PostgreSQL en CloudWatch (`/aws/rds/instance/rutalibre-prod/postgresql`) lo crea RDS y no Terraform: se borra a mano.
 
 ## Excepciones de Checkov
 

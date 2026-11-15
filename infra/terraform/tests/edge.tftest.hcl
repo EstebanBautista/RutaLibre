@@ -73,14 +73,25 @@ run "https_everywhere" {
 
   assert {
     condition = (
-      length(jsondecode(aws_s3_bucket_policy.frontend.policy).Statement) == 1 &&
-      jsondecode(aws_s3_bucket_policy.frontend.policy).Statement[0].Effect == "Allow" &&
-      jsondecode(aws_s3_bucket_policy.frontend.policy).Statement[0].Action == "s3:GetObject" &&
-      jsondecode(aws_s3_bucket_policy.frontend.policy).Statement[0].Principal.Service == "cloudfront.amazonaws.com" &&
-      jsondecode(aws_s3_bucket_policy.frontend.policy).Statement[0].Resource == "arn:aws:s3:::fe-test/*" &&
-      jsondecode(aws_s3_bucket_policy.frontend.policy).Statement[0].Condition.StringEquals["AWS:SourceArn"] == "arn:aws:cloudfront::123456789012:distribution/TEST"
+      length([for statement in jsondecode(aws_s3_bucket_policy.frontend.policy).Statement : statement if statement.Effect == "Allow"]) == 1 &&
+      anytrue([
+        for statement in jsondecode(aws_s3_bucket_policy.frontend.policy).Statement :
+        statement.Effect == "Allow" &&
+        statement.Action == "s3:GetObject" &&
+        statement.Principal.Service == "cloudfront.amazonaws.com" &&
+        statement.Resource == "arn:aws:s3:::fe-test/*" &&
+        statement.Condition.StringEquals["AWS:SourceArn"] == "arn:aws:cloudfront::123456789012:distribution/TEST"
+      ])
     )
     error_message = "Only this CloudFront distribution may read the frontend bucket."
+  }
+
+  assert {
+    condition = anytrue([
+      for statement in jsondecode(aws_s3_bucket_policy.frontend.policy).Statement :
+      statement.Effect == "Deny" && try(statement.Condition.Bool["aws:SecureTransport"], "") == "false"
+    ])
+    error_message = "The frontend bucket must deny requests without TLS."
   }
 
   assert {

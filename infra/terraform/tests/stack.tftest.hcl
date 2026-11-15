@@ -20,6 +20,12 @@ override_resource {
   values          = { id = "sg-app" }
 }
 
+override_resource {
+  target          = module.edge.aws_cloudfront_distribution.this
+  override_during = plan
+  values          = { domain_name = "dstack.cloudfront.net" }
+}
+
 # The root module with its default values: every module wired together
 # produces a plan.
 run "whole_stack_plans" {
@@ -52,5 +58,10 @@ run "modules_are_wired_safely" {
   assert {
     condition     = module.compute.subnet_id == "subnet-public"
     error_message = "The app server must live in a public subnet."
+  }
+
+  assert {
+    condition     = module.compute.public_host == "dstack.cloudfront.net"
+    error_message = "The app server must receive the CloudFront host name."
   }
 }

@@ -13,6 +13,7 @@ variables {
   db_port              = 5432
   db_name              = "rutalibre"
   repo_url             = "https://github.com/example/rutalibre.git"
+  public_host          = "dtest.cloudfront.net"
 }
 
 run "instance_is_hardened" {
@@ -58,6 +59,15 @@ run "instance_is_hardened" {
       strcontains(aws_instance.app.user_data, "systemctl enable --now rutalibre-api.service rutalibre-optimizer.service nginx.service rutalibre-env.timer")
     )
     error_message = "The settings (rotated database password) must be refreshed by a timer."
+  }
+
+  assert {
+    condition = (
+      strcontains(aws_instance.app.user_data, "export PUBLIC_HOST=\"dtest.cloudfront.net\"") &&
+      strcontains(aws_instance.app.user_data, "server_name $PUBLIC_HOST;") &&
+      strcontains(aws_instance.app.user_data, "echo \"ALLOWED_HOSTS=$(q \"$PUBLIC_HOST\")\"")
+    )
+    error_message = "nginx and Django must accept only this distribution's host name, not any *.cloudfront.net."
   }
 }
 

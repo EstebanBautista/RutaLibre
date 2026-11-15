@@ -241,7 +241,7 @@ Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `
 
 - **Subred privada para RDS:** no tiene ruta a internet; aunque alguien abriera el grupo de seguridad, la base de datos no sería alcanzable desde fuera.
 - **Grupo de seguridad que referencia a otro grupo:** el puerto 5432 se abre "al grupo de la aplicación", no a un rango de IPs. Si la EC2 cambia de IP, la regla sigue valiendo.
-- **Rol de instancia:** la EC2 recibe credenciales temporales de AWS automáticamente. No hay claves guardadas en el servidor; con Backblaze sí hacen falta.
+- **Rol de instancia:** la EC2 recibe credenciales temporales de AWS automáticamente, sin claves guardadas en el servidor. Hoy `storage.py` todavía exige claves estáticas (las de Backblaze); adaptarlo es uno de los cambios de "Qué faltaría" en `infra/README.md`.
 - **IMDSv2:** el servicio de metadatos de la instancia (de donde salen esas credenciales) exige un token. Esto bloquea el robo de credenciales por SSRF.
 - **Sin NAT Gateway:** costaría unos US$32 al mes. La base de datos no necesita salir a internet y la EC2 está en una subred pública protegida por su grupo de seguridad.
 - **CloudFront delante:** da HTTPS gratis y pone el frontend y la API en el mismo dominio.
@@ -254,3 +254,4 @@ Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `
 - ¿Por qué la contraseña de RDS no está en ninguna variable de Terraform? ¿Dónde vive y quién puede leerla?
 - ¿Qué acciones S3 necesita el backend y por qué hacen falta `s3:ListBucketVersions` y `s3:DeleteObjectVersion`?
 - ¿Por qué la EC2 no tiene clave SSH, y cómo entrarías a revisarla?
+- La lista de prefijos de CloudFront incluye las distribuciones de cualquier cliente de AWS. ¿Qué impide que la distribución de otra persona use tu EC2 como origen?

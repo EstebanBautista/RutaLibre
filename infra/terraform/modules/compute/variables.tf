@@ -75,3 +75,8 @@ variable "app_git_ref" {
   type        = string
   default     = "main"
 }
+
+variable "public_host" {
+  description = "Host name of the CloudFront distribution. nginx and Django accept only this name."
+  type        = string
+}

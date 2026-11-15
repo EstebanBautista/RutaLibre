@@ -38,6 +38,7 @@ module "compute" {
   db_port              = module.database.port
   db_name              = module.database.db_name
   repo_url             = var.repo_url
+  public_host          = module.edge.domain_name
 }
 
 module "database" {

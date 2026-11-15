@@ -22,3 +22,8 @@ output "subnet_id" {
   description = "Subnet of the app server."
   value       = aws_instance.app.subnet_id
 }
+
+output "public_host" {
+  description = "Host name the server accepts (the CloudFront distribution)."
+  value       = var.public_host
+}

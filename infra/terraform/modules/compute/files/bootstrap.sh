@@ -8,14 +8,14 @@
 #
 # Terraform prepends `export NAME="value"` lines for these non-secret values:
 #   AWS_REGION CONFIG_PARAMETER_PATH DB_SECRET_ARN DB_HOST DB_PORT DB_NAME
-#   S3_BUCKET REPO_URL APP_GIT_REF
+#   S3_BUCKET PUBLIC_HOST REPO_URL APP_GIT_REF
 # Secrets are read on the instance, at service start, by rutalibre-env.
 
 set -euo pipefail
 
 : "${AWS_REGION:?}" "${CONFIG_PARAMETER_PATH:?}" "${DB_SECRET_ARN:?}"
 : "${DB_HOST:?}" "${DB_PORT:?}" "${DB_NAME:?}" "${S3_BUCKET:?}"
-: "${REPO_URL:?}" "${APP_GIT_REF:?}"
+: "${PUBLIC_HOST:?}" "${REPO_URL:?}" "${APP_GIT_REF:?}"
 
 APP_DIR=/opt/rutalibre
 CONF_DIR=/etc/rutalibre
@@ -52,18 +52,25 @@ DB_HOST=$DB_HOST
 DB_PORT=$DB_PORT
 DB_NAME=$DB_NAME
 S3_BUCKET=$S3_BUCKET
+PUBLIC_HOST=$PUBLIC_HOST
 EOF
 chmod 600 "$CONF_DIR/bootstrap.env"
 
 # rutalibre-env writes $CONF_DIR/env (mode 600) on every boot:
 # - every parameter under CONFIG_PARAMETER_PATH becomes a variable with the
-#   same name (DJANGO_SECRET_KEY, JWT_SIGNING_KEY, ALLOWED_HOSTS, ...);
-# - DATABASE_URL is built from the secret RDS manages.
+#   same name (DJANGO_SECRET_KEY, JWT_SIGNING_KEY, ...);
+# - DATABASE_URL is built from the secret RDS manages;
+# - ALLOWED_HOSTS is the CloudFront host name.
+# Every value is written as a JSON string ("..." with \n, \" and \\
+# escapes), which systemd's EnvironmentFile reads back unchanged.
 cat > /usr/local/bin/rutalibre-env <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 # shellcheck source=/dev/null
 source /etc/rutalibre/bootstrap.env
+
+# Quote a value for the EnvironmentFile.
+q() { jq -rn --arg v "$1" '$v|@json'; }
 
 out=$(mktemp /etc/rutalibre/env.XXXXXX)
 chmod 600 "$out"
@@ -72,7 +79,7 @@ aws ssm get-parameters-by-path \
   --region "$AWS_REGION" --path "$CONFIG_PARAMETER_PATH" \
   --recursive --with-decryption \
   --query 'Parameters[].[Name,Value]' --output json \
-  | jq -r '.[] | "\(.[0] | split("/") | last)=\(.[1])"' >> "$out"
+  | jq -r '.[] | "\(.[0] | split("/") | last)=\(.[1] | @json)"' >> "$out"
 
 secret=$(aws secretsmanager get-secret-value \
   --region "$AWS_REGION" --secret-id "$DB_SECRET_ARN" \
@@ -81,10 +88,11 @@ db_user=$(jq -r '.username | @uri' <<<"$secret")
 db_password=$(jq -r '.password | @uri' <<<"$secret")
 
 {
-  echo "DATABASE_URL=postgres://${db_user}:${db_password}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require"
-  echo "OPTIMIZER_URL=http://127.0.0.1:8001"
-  echo "S3_BUCKET=${S3_BUCKET}"
-  echo "S3_REGION=${AWS_REGION}"
+  echo "DATABASE_URL=$(q "postgres://${db_user}:${db_password}@${DB_HOST}:${DB_PORT}/${DB_NAME}?sslmode=require")"
+  echo "OPTIMIZER_URL=$(q "http://127.0.0.1:8001")"
+  echo "S3_BUCKET=$(q "$S3_BUCKET")"
+  echo "S3_REGION=$(q "$AWS_REGION")"
+  echo "ALLOWED_HOSTS=$(q "$PUBLIC_HOST")"
 } >> "$out"
 
 mv "$out" /etc/rutalibre/env
@@ -177,17 +185,19 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-# 6. nginx. CloudFront sends its own host name (*.cloudfront.net). Only the
-#    API, the admin, Django static files and the optimizer docs are exposed;
-#    /optimize stays private (Django calls it on 127.0.0.1).
-cat > /etc/nginx/conf.d/rutalibre.conf <<'EOF'
+# 6. nginx. The security group lets in every CloudFront distribution, not
+#    only ours, so nginx answers only to our distribution's host name (the
+#    viewer's Host is forwarded). Only the API, the admin, Django static files
+#    and the optimizer docs are exposed; /optimize stays private (Django calls
+#    it on 127.0.0.1).
+cat > /etc/nginx/conf.d/rutalibre.conf <<EOF
 server {
     listen 80;
-    server_name .cloudfront.net;
+    server_name $PUBLIC_HOST;
     client_max_body_size 1m;
 
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Host \$host;
+    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
 
     location /api/    { proxy_pass http://127.0.0.1:8000; }
