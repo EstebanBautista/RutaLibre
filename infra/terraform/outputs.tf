@@ -22,3 +22,8 @@ output "instance_id" {
   description = "ID of the app server, for Session Manager."
   value       = module.compute.instance_id
 }
+
+output "app_url" {
+  description = "Public address of the app, on CloudFront."
+  value       = "https://${module.edge.domain_name}"
+}

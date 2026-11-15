@@ -17,8 +17,10 @@ module "storage" {
 
   evidence_bucket_name = var.evidence_bucket_name
   frontend_bucket_name = var.frontend_bucket_name
-  # Replaced by the CloudFront address once the edge module exists.
-  cors_allowed_origins = ["https://rutalibre-chi.vercel.app"]
+  # The browser uploads photos from the page CloudFront serves. No cycle:
+  # this CORS rule depends on the distribution, the distribution depends on
+  # the frontend bucket, not on the evidence bucket.
+  cors_allowed_origins = ["https://${module.edge.domain_name}"]
 }
 
 module "compute" {
@@ -45,4 +47,14 @@ module "database" {
   vpc_id                = module.network.vpc_id
   subnet_ids            = module.network.private_subnet_ids
   app_security_group_id = module.compute.security_group_id
+}
+
+module "edge" {
+  source = "./modules/edge"
+
+  name_prefix                          = local.name_prefix
+  frontend_bucket_id                   = module.storage.frontend_bucket_id
+  frontend_bucket_arn                  = module.storage.frontend_bucket_arn
+  frontend_bucket_regional_domain_name = module.storage.frontend_bucket_regional_domain_name
+  api_origin_domain_name               = module.compute.public_dns
 }
