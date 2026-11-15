@@ -51,6 +51,14 @@ run "instance_is_hardened" {
     )
     error_message = "Port 80 must be open only to CloudFront's prefix list, never to a CIDR."
   }
+
+  assert {
+    condition = (
+      strcontains(aws_instance.app.user_data, "OnUnitActiveSec=5min") &&
+      strcontains(aws_instance.app.user_data, "systemctl enable --now rutalibre-api.service rutalibre-optimizer.service nginx.service rutalibre-env.timer")
+    )
+    error_message = "The settings (rotated database password) must be refreshed by a timer."
+  }
 }
 
 run "iam_is_least_privilege" {
@@ -100,5 +108,14 @@ run "iam_is_least_privilege" {
   assert {
     condition     = aws_iam_role_policy_attachment.ssm.policy_arn == "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     error_message = "The instance is managed through SSM Session Manager."
+  }
+
+  assert {
+    condition = (
+      length(flatten([jsondecode(aws_iam_role_policy.read_config.policy).Statement[0].Resource])) == 2 &&
+      anytrue([for arn in flatten([jsondecode(aws_iam_role_policy.read_config.policy).Statement[0].Resource]) : endswith(arn, ":parameter/rutalibre/prod")]) &&
+      anytrue([for arn in flatten([jsondecode(aws_iam_role_policy.read_config.policy).Statement[0].Resource]) : endswith(arn, ":parameter/rutalibre/prod/*")])
+    )
+    error_message = "read-config must cover exactly the path (GetParametersByPath) and the parameters under it."
   }
 }

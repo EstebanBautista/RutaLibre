@@ -51,8 +51,8 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md) y en las decision
 | FastAPI: APIs tipadas, validadas y documentadas | [`optimizer/app/`](optimizer/app/): modelos Pydantic con rangos, rechazo de `NaN`, ids únicos; OpenAPI en `/docs` |
 | C++ | [`engine/src/route.cpp`](engine/src/route.cpp): haversine, vecino más cercano y 2-opt, sin memoria dinámica; exportado a WebAssembly y usado desde Python y JavaScript |
 | AWS: S3 e IAM | **Código real:** [`core/storage.py`](backend/core/storage.py) y [`core/photos.py`](backend/core/photos.py) usan `boto3` con URLs prefirmadas PUT/GET, `HEAD` para validar, borrado por prefijo y CORS del bucket. Bucket privado y clave limitada a un bucket (mínimo privilegio, ver [política IAM equivalente](#camino-a-aws)). Corre contra Backblaze B2, compatible con S3 |
-| AWS: EC2, RDS (y S3, IAM en AWS) | Terraform en [`infra/terraform/`](infra/terraform/): VPC, EC2, RDS, S3, IAM y CloudFront. Validado en el CI (formato, esquema, TFLint, 7 tests con proveedor simulado, Checkov); **no aplicado**: el demo corre en Vercel. Ver [`infra/README.md`](infra/README.md) |
-| Pruebas | 330 comprobaciones del motor, 29 tests del optimizador, 134 del backend (S3 simulado con `moto`, con versiones como Backblaze), 17 del frontend, 7 de infraestructura (Terraform con AWS simulado) |
+| AWS: EC2, RDS (y S3, IAM en AWS) | Terraform en [`infra/terraform/`](infra/terraform/): VPC, EC2, RDS, S3, IAM y CloudFront. Validado en el CI (formato, esquema, TFLint, 8 tests con proveedor simulado, Checkov); **no aplicado**: el demo corre en Vercel. Ver [`infra/README.md`](infra/README.md) |
+| Pruebas | 330 comprobaciones del motor, 29 tests del optimizador, 134 del backend (S3 simulado con `moto`, con versiones como Backblaze), 17 del frontend, 8 de infraestructura (Terraform con AWS simulado) |
 | Revisión de código y CI | [GitHub Actions](.github/workflows/ci.yml): motor nativo y en wasm, optimizador con el wasm recién compilado, backend, frontend e infraestructura (Terraform, TFLint, Checkov) |
 | Documentación técnica | Este README, [`docs/architecture.md`](docs/architecture.md), [ADRs](docs/adr/), [`docs/EXPLICACION.md`](docs/EXPLICACION.md), [`infra/README.md`](infra/README.md) |
 
@@ -88,7 +88,7 @@ cd backend   && pytest           # 134 tests (S3 simulado con moto)
 cd optimizer && pytest           # 29 tests
 node --test "frontend/tests/*.mjs"
 python engine/build.py --test    # requiere Emscripten
-cd infra/terraform && terraform init -backend=false && terraform test   # 7 tests, requiere Terraform
+cd infra/terraform && terraform init -backend=false && terraform test   # 8 tests, requiere Terraform
 ```
 
 ### Recompilar el motor C++

@@ -91,6 +91,21 @@ mv "$out" /etc/rutalibre/env
 SCRIPT
 chmod 750 /usr/local/bin/rutalibre-env
 
+# rutalibre-refresh runs every 5 minutes. RDS rotates the master password
+# (every 7 days by default) and Django reconnects on every request, so the
+# services are restarted as soon as the settings change.
+cat > /usr/local/bin/rutalibre-refresh <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+before=$(sha256sum /etc/rutalibre/env 2>/dev/null || true)
+/usr/local/bin/rutalibre-env
+after=$(sha256sum /etc/rutalibre/env)
+if [ "$before" != "$after" ]; then
+  systemctl try-restart rutalibre-api.service rutalibre-optimizer.service
+fi
+SCRIPT
+chmod 750 /usr/local/bin/rutalibre-refresh
+
 # 5. Services. Both listen only on 127.0.0.1; nginx is the only way in.
 cat > /etc/systemd/system/rutalibre-env.service <<'EOF'
 [Unit]
@@ -102,6 +117,28 @@ Wants=network-online.target
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/bin/rutalibre-env
+EOF
+
+cat > /etc/systemd/system/rutalibre-refresh.service <<'EOF'
+[Unit]
+Description=Refresh RutaLibre settings (rotated database password)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/rutalibre-refresh
+EOF
+
+cat > /etc/systemd/system/rutalibre-env.timer <<'EOF'
+[Unit]
+Description=Refresh RutaLibre settings every 5 minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+Unit=rutalibre-refresh.service
+
+[Install]
+WantedBy=timers.target
 EOF
 
 cat > /etc/systemd/system/rutalibre-api.service <<EOF
@@ -165,4 +202,4 @@ server {
 EOF
 
 systemctl daemon-reload
-systemctl enable --now rutalibre-api.service rutalibre-optimizer.service nginx.service
+systemctl enable --now rutalibre-api.service rutalibre-optimizer.service nginx.service rutalibre-env.timer

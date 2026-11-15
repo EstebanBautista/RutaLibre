@@ -17,3 +17,8 @@ output "role_name" {
   description = "Name of the instance role."
   value       = aws_iam_role.app.name
 }
+
+output "subnet_id" {
+  description = "Subnet of the app server."
+  value       = aws_instance.app.subnet_id
+}

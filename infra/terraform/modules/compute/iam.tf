@@ -50,6 +50,8 @@ resource "aws_iam_role_policy" "evidence_photos" {
   })
 }
 
+# GetParametersByPath is authorized against the requested path itself, and
+# GetParameters against each parameter, so both ARNs are needed.
 # SecureString parameters use the AWS managed key aws/ssm. Its key policy
 # already lets Parameter Store decrypt for any principal of the account that
 # may read the parameter, so no kms:Decrypt statement is needed.
@@ -61,9 +63,12 @@ resource "aws_iam_role_policy" "read_config" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["ssm:GetParametersByPath", "ssm:GetParameters"]
-        Resource = "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.config_parameter_path}/*"
+        Effect = "Allow"
+        Action = ["ssm:GetParametersByPath", "ssm:GetParameters"]
+        Resource = [
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.config_parameter_path}",
+          "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.config_parameter_path}/*",
+        ]
       }
     ]
   })

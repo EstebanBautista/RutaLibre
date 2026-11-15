@@ -51,7 +51,8 @@ El job **Infraestructura (Terraform)** del [CI](../.github/workflows/ci.yml) eje
 | `terraform fmt -check` | Formato estándar |
 | `terraform validate` | Sintaxis y esquema real del proveedor AWS 6.x |
 | TFLint + reglas AWS | Tipos de instancia inexistentes, variables sin usar, convenciones |
-| `terraform test` | 7 escenarios con el proveedor AWS **simulado** (`mock_provider`): propiedades concretas del plan |
+| `terraform test` | 8 escenarios con el proveedor AWS **simulado** (`mock_provider`): propiedades concretas del plan |
+| Búsqueda de texto | Ningún `key_name` ni `aws_key_pair`: la EC2 no tiene clave SSH |
 | `shellcheck` | El script de arranque |
 | Checkov | Malas prácticas de seguridad conocidas; falla ante cualquier hallazgo nuevo |
 
@@ -72,25 +73,26 @@ checkov -d . --framework terraform --compact --quiet
 
 | Test | Propiedades |
 |---|---|
-| `network` | 2 + 2 subredes con los CIDR y zonas indicados; ninguna asigna IP pública automática |
+| `network` | 2 + 2 subredes con los CIDR y zonas indicados; ninguna asigna IP pública automática; las privadas usan la tabla de rutas sin salida a internet |
 | `storage` | Ambos buckets: 4 bloqueos de acceso público, versiones, cifrado, sin ACL. Evidencias: CORS solo `PUT` y `GET` desde el origen dado; `uploads/` expira en 1 día; se niega todo acceso sin TLS. Frontend: versiones viejas expiran en 30 días |
 | `database` | No pública, cifrada, contraseña administrada (ninguna en el código), protección contra borrado, backups de 7 días, 5432 solo desde el grupo de la aplicación y nunca desde un CIDR, `rds.force_ssl`, registros de PostgreSQL |
-| `compute` | `t3.micro`, IMDSv2, disco cifrado, puerto 80 solo desde la lista de prefijos de CloudFront; acciones y recursos **exactos** de la política de fotos, sin comodines; Session Manager |
-| `edge` | HTTPS en todas las rutas; las 5 rutas de API van a la EC2; el frontend es el origen por defecto; solo esta distribución puede leer el bucket del frontend; cabeceras de seguridad |
-| `stack` | El módulo raíz completo, con sus valores por defecto, produce un plan |
+| `compute` | `t3.micro`, IMDSv2, disco cifrado, puerto 80 solo desde la lista de prefijos de CloudFront; acciones y recursos **exactos** de la política de fotos, sin comodines; lectura de parámetros limitada a `/rutalibre/prod`; Session Manager; el temporizador que refresca la contraseña rotada |
+| `edge` | HTTPS en todas las rutas; las 5 rutas de API van a la EC2 y le pasan la cabecera `Host`; el frontend es el origen por defecto y se lee con OAC; solo esta distribución puede leer el bucket del frontend; cabeceras de seguridad |
+| `stack` | El módulo raíz completo produce un plan, y el cableado entre módulos es seguro: la base de datos recibe solo las subredes privadas y solo el grupo de seguridad de la aplicación; la EC2 va en una subred pública |
 
-Cada aserción se comprobó rompiendo a propósito la propiedad que protege (por ejemplo, poner `publicly_accessible = true` o añadir `s3:*`) y viendo fallar el test.
+Las propiedades principales se comprobaron rompiéndolas a propósito (por ejemplo, poner `publicly_accessible = true`, añadir `s3:*` o pasar las subredes públicas a la base de datos) y viendo fallar el test.
 
 ## Qué no está validado
 
 - **Los tests usan un proveedor simulado.** Prueban la configuración que Terraform enviaría, no que AWS la acepte. Un `apply` real podría encontrar errores que el plan no ve (cuotas, nombres de bucket ya tomados, combinaciones que la API rechaza).
 - **`bootstrap.sh` nunca se ejecutó** en una instancia real. Pasa `bash -n` y `shellcheck`, nada más.
-- **El cableado entre módulos** no se prueba cuando el valor es un identificador que calcula AWS: si la raíz pasara las subredes públicas a la base de datos, ningún test fallaría (Checkov tampoco lo detecta).
+- **Los identificadores que asigna AWS** (subredes, grupos de seguridad) se fijan con `override_resource` en los tests: así se prueba a qué módulo llega cada uno, pero no los valores reales.
 - **`ALLOWED_HOSTS`** de Django depende del dominio de CloudFront, que solo existe tras el primer `apply`. Se resuelve con un parámetro (`.cloudfront.net`, ver abajo). El origen CORS del bucket, en cambio, sí se toma del dominio de CloudFront sin segunda pasada.
 
 ## Qué faltaría para aplicarlo de verdad
 
 1. **Código de la aplicación** (esta fase no lo toca):
+   - Django se conecta con el usuario maestro de RDS. Lo correcto sería un usuario propio de la aplicación, sin permisos de administración.
    - `backend/config/settings.py` reconoce producción solo con `VERCEL=1`; habría que añadir otra señal (por ejemplo `APP_ENV=production`).
    - `backend/core/storage.py` exige `S3_ENDPOINT_URL` y claves estáticas; en EC2 debe usar las credenciales del rol (sin claves ni endpoint).
    - `frontend/js/config.js` debería usar el mismo origen (`/api`) cuando no está en Vercel ni en local.
@@ -98,6 +100,7 @@ Cada aserción se comprobó rompiendo a propósito la propiedad que protege (por
 3. **Estado remoto:** copiar `backend.tf.example` a `backend.tf` y crear antes ese bucket.
 4. **Frontend:** `aws s3 sync frontend/ s3://rutalibre-frontend/` y una invalidación de CloudFront.
 5. **Migraciones:** las corre el servicio `rutalibre-api` al arrancar (`ExecStartPre`).
+6. **Contraseña rotada:** RDS cambia la contraseña maestra cada 7 días. Un temporizador relee los secretos cada 5 minutos y reinicia los servicios si cambiaron, así que tras cada rotación la API puede fallar hasta 5 minutos.
 
 ## Costo estimado si se aplicara
 
@@ -138,4 +141,4 @@ Corregidos: ciclo de vida del bucket del frontend, cabeceras de seguridad en Clo
 | CKV_AWS_374 | CloudFront | La aplicación es pública; no se bloquean países |
 | CKV2_AWS_42, CKV_AWS_174 | CloudFront | Sin dominio propio, el certificado de `*.cloudfront.net` no permite elegir la versión mínima de TLS |
 
-Comprobado a mano: añadir una regla que abre el puerto 22 a `0.0.0.0/0` hace fallar Checkov (CKV_AWS_24).
+Comprobado: añadir una regla que abre el puerto 22 a `0.0.0.0/0` hace fallar Checkov (CKV_AWS_24).

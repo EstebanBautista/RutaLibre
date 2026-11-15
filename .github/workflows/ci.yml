@@ -135,6 +135,12 @@ jobs:
           tflint --recursive --config "$(pwd)/.tflint.hcl"
       - name: Tests (proveedor simulado)
         run: terraform test
+      - name: Sin pares de claves SSH
+        run: |
+          if grep -rnE 'key_name|aws_key_pair' --include='*.tf' .; then
+            echo "SSH key pairs are not allowed: use Session Manager." >&2
+            exit 1
+          fi
       - name: Shellcheck del script de arranque
         run: shellcheck modules/compute/files/bootstrap.sh
       - uses: actions/setup-python@v5

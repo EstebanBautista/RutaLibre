@@ -189,9 +189,9 @@ exclusiones. `infra/README.md` resume todas las excepciones en una tabla.
   (hoy usa `VERCEL=1`); que `storage.py` acepte credenciales del rol en vez de exigir claves
   estáticas; que `frontend/js/config.js` use el mismo origen; subir el frontend al bucket; correr
   migraciones.
-- **Límites de los tests:** no ven el cableado entre módulos cuando el valor es un identificador
-  que calcula AWS; y el origen CORS y `ALLOWED_HOSTS` dependen del dominio de CloudFront, que solo
-  existe tras un primer `apply`.
+- **Límites de los tests:** los identificadores que calcula AWS se fijan con `override_resource`
+  para probar el cableado entre módulos (cambio tras la revisión final); `ALLOWED_HOSTS` depende del
+  dominio de CloudFront, que solo existe tras un primer `apply`, y lo pone un operador.
 - **Costo estimado** si se aplicara (del orden de US$25–30 al mes; se verifica con la calculadora
   de AWS durante la implementación).
 

@@ -7,6 +7,14 @@ mock_provider "aws" {
       arn = "arn:aws:cloudfront::123456789012:distribution/TEST"
     }
   }
+
+  mock_resource "aws_cloudfront_origin_access_control" {
+    override_during = plan
+    defaults = {
+      id = "OAC-TEST"
+    }
+  }
+
 }
 
 run "https_everywhere" {
@@ -81,5 +89,24 @@ run "https_everywhere" {
       alltrue([for behavior in aws_cloudfront_distribution.this.ordered_cache_behavior : behavior.response_headers_policy_id != null])
     )
     error_message = "Every behavior must add the security response headers."
+  }
+
+  assert {
+    condition = anytrue([
+      for origin in aws_cloudfront_distribution.this.origin :
+      origin.origin_id == "frontend-s3" && origin.origin_access_control_id == "OAC-TEST"
+    ])
+    error_message = "CloudFront must sign requests to the private frontend bucket (OAC)."
+  }
+
+  assert {
+    condition = (
+      data.aws_cloudfront_origin_request_policy.all_viewer.name == "Managed-AllViewer" &&
+      alltrue([
+        for behavior in aws_cloudfront_distribution.this.ordered_cache_behavior :
+        behavior.origin_request_policy_id == data.aws_cloudfront_origin_request_policy.all_viewer.id
+      ])
+    )
+    error_message = "API paths must forward every viewer header, including Host (nginx and ALLOWED_HOSTS rely on it)."
   }
 }
