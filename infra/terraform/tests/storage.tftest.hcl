@@ -74,4 +74,12 @@ run "buckets_are_private" {
     condition     = output.evidence_bucket_arn == "arn:aws:s3:::ev-test"
     error_message = "The evidence bucket ARN must be built from its name."
   }
+
+  assert {
+    condition = anytrue([
+      for rule in aws_s3_bucket_lifecycle_configuration.frontend.rule :
+      rule.status == "Enabled" && try(rule.noncurrent_version_expiration[0].noncurrent_days, 0) == 30
+    ])
+    error_message = "Old frontend versions must expire after 30 days."
+  }
 }

@@ -16,6 +16,7 @@ resource "aws_security_group" "app" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "http_from_cloudfront" {
+  #checkov:skip=CKV_AWS_260:False positive: the source is the CloudFront origin-facing prefix list, not 0.0.0.0/0
   security_group_id = aws_security_group.app.id
   description       = "HTTP from CloudFront edge locations"
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront.id
@@ -66,6 +67,7 @@ locals {
 }
 
 resource "aws_instance" "app" {
+  #checkov:skip=CKV_AWS_126:Detailed (1-minute) monitoring is paid; 5-minute basic metrics are enough
   ami                         = data.aws_ssm_parameter.al2023.value
   instance_type               = var.instance_type
   subnet_id                   = var.subnet_id

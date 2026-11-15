@@ -137,3 +137,10 @@ jobs:
         run: terraform test
       - name: Shellcheck del script de arranque
         run: shellcheck modules/compute/files/bootstrap.sh
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Checkov (seguridad)
+        run: |
+          pip install checkov==3.4.5
+          checkov -d . --framework terraform --compact --quiet

@@ -51,10 +51,10 @@ Más detalle en [`docs/architecture.md`](docs/architecture.md) y en las decision
 | FastAPI: APIs tipadas, validadas y documentadas | [`optimizer/app/`](optimizer/app/): modelos Pydantic con rangos, rechazo de `NaN`, ids únicos; OpenAPI en `/docs` |
 | C++ | [`engine/src/route.cpp`](engine/src/route.cpp): haversine, vecino más cercano y 2-opt, sin memoria dinámica; exportado a WebAssembly y usado desde Python y JavaScript |
 | AWS: S3 e IAM | **Código real:** [`core/storage.py`](backend/core/storage.py) y [`core/photos.py`](backend/core/photos.py) usan `boto3` con URLs prefirmadas PUT/GET, `HEAD` para validar, borrado por prefijo y CORS del bucket. Bucket privado y clave limitada a un bucket (mínimo privilegio, ver [política IAM equivalente](#camino-a-aws)). Corre contra Backblaze B2, compatible con S3 |
-| AWS: EC2, RDS | Diseño en [Camino a AWS](#camino-a-aws); infraestructura como código en la fase B |
-| Pruebas | 330 comprobaciones del motor, 29 tests del optimizador, 134 del backend (S3 simulado con `moto`, con versiones como Backblaze), 17 del frontend |
-| Revisión de código y CI | [GitHub Actions](.github/workflows/ci.yml): motor nativo y en wasm, optimizador con el wasm recién compilado, backend, frontend |
-| Documentación técnica | Este README, [`docs/architecture.md`](docs/architecture.md), [ADRs](docs/adr/), [`docs/EXPLICACION.md`](docs/EXPLICACION.md) |
+| AWS: EC2, RDS (y S3, IAM en AWS) | Terraform en [`infra/terraform/`](infra/terraform/): VPC, EC2, RDS, S3, IAM y CloudFront. Validado en el CI (formato, esquema, TFLint, 7 tests con proveedor simulado, Checkov); **no aplicado**: el demo corre en Vercel. Ver [`infra/README.md`](infra/README.md) |
+| Pruebas | 330 comprobaciones del motor, 29 tests del optimizador, 134 del backend (S3 simulado con `moto`, con versiones como Backblaze), 17 del frontend, 7 de infraestructura (Terraform con AWS simulado) |
+| Revisión de código y CI | [GitHub Actions](.github/workflows/ci.yml): motor nativo y en wasm, optimizador con el wasm recién compilado, backend, frontend e infraestructura (Terraform, TFLint, Checkov) |
+| Documentación técnica | Este README, [`docs/architecture.md`](docs/architecture.md), [ADRs](docs/adr/), [`docs/EXPLICACION.md`](docs/EXPLICACION.md), [`infra/README.md`](infra/README.md) |
 
 ## Correrlo en local
 
@@ -88,6 +88,7 @@ cd backend   && pytest           # 134 tests (S3 simulado con moto)
 cd optimizer && pytest           # 29 tests
 node --test "frontend/tests/*.mjs"
 python engine/build.py --test    # requiere Emscripten
+cd infra/terraform && terraform init -backend=false && terraform test   # 7 tests, requiere Terraform
 ```
 
 ### Recompilar el motor C++
@@ -103,7 +104,7 @@ El `engine.wasm` compilado se versiona en el repositorio: así Vercel no necesit
 
 ## Camino a AWS
 
-El demo corre en Vercel y Neon porque son gratuitos y no se apagan, y un portafolio tiene que estar disponible siempre. La arquitectura está pensada para moverse a AWS sin cambiar el código de negocio:
+El demo corre en Vercel y Neon porque son gratuitos y no se apagan, y un portafolio tiene que estar disponible siempre. La arquitectura está pensada para moverse a AWS sin cambiar el código de negocio, y [`infra/terraform/`](infra/terraform/) ya la describe como código:
 
 | Hoy | En AWS |
 |---|---|
@@ -112,9 +113,9 @@ El demo corre en Vercel y Neon porque son gratuitos y no se apagan, y un portafo
 | Frontend estático en Vercel | **S3** + CloudFront |
 | API Django y optimizador en Vercel Functions | **EC2** (o contenedores) detrás de un balanceador |
 | PostgreSQL en Neon | **RDS** PostgreSQL; Django solo necesita otra `DATABASE_URL` |
-| Variables secretas en Vercel | Secrets Manager |
+| Variables secretas en Vercel | Parameter Store y Secrets Manager |
 
-Las fotos ya son código S3 real. Política IAM equivalente a los permisos que tiene hoy la clave de Backblaze (solo ese bucket, solo lo necesario):
+Las fotos ya son código S3 real. Esta es la política del rol de la EC2 en Terraform ([`iam.tf`](infra/terraform/modules/compute/iam.tf)): solo ese bucket y exactamente las acciones que usa `storage.py`, incluido el borrado por versión:
 
 ```json
 {
@@ -123,25 +124,25 @@ Las fotos ya son código S3 real. Política IAM equivalente a los permisos que t
     {
       "Sid": "EvidencePhotos",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:DeleteObjectVersion"],
       "Resource": "arn:aws:s3:::rutalibre-evidencias/*"
     },
     {
       "Sid": "ListForCleanupAndChecks",
       "Effect": "Allow",
-      "Action": ["s3:ListBucket"],
+      "Action": ["s3:ListBucket", "s3:ListBucketVersions"],
       "Resource": "arn:aws:s3:::rutalibre-evidencias"
     }
   ]
 }
 ```
 
-EC2, RDS y el resto de roles son diseño; la fase B los lleva a Terraform.
+EC2, RDS, la red y CloudFront están en Terraform, validados en el CI y **sin aplicar** (aplicarlo costaría unos US$27 al mes). Qué prueba el CI, qué no y qué faltaría para desplegarlo: [`infra/README.md`](infra/README.md).
 
 ## Hoja de ruta
 
 - ~~**Fase A:** foto de evidencia al entregar con URL prefirmada vía `boto3`.~~ Hecha.
-- **Fase B:** infraestructura AWS en Terraform (EC2, RDS, S3, IAM), validada en CI.
+- ~~**Fase B:** infraestructura AWS en Terraform (EC2, RDS, S3, IAM), validada en CI.~~ Hecha (validada, no aplicada).
 - **Fase C:** microservicio Flask de notificaciones al completar una ruta.
 - **Fase D:** vista propia del repartidor, registro de usuarios, edición del depósito.
 - **Fase E:** LocalStack para probar S3 e IAM en local.

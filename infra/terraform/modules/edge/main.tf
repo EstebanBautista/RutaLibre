@@ -16,6 +16,11 @@ data "aws_cloudfront_cache_policy" "disabled" {
 }
 
 # Forwards every header (including Host), query string and cookie to the API.
+# HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, ...
+data "aws_cloudfront_response_headers_policy" "security_headers" {
+  name = "Managed-SecurityHeadersPolicy"
+}
+
 data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer"
 }
@@ -29,6 +34,13 @@ resource "aws_cloudfront_origin_access_control" "frontend" {
 }
 
 resource "aws_cloudfront_distribution" "this" {
+  #checkov:skip=CKV_AWS_68:WAF is a paid service; out of scope
+  #checkov:skip=CKV2_AWS_47:WAF is a paid service; out of scope
+  #checkov:skip=CKV_AWS_86:Access logs need a separate log bucket; out of scope
+  #checkov:skip=CKV_AWS_310:Origin failover needs a second app server
+  #checkov:skip=CKV_AWS_374:The app is public; no country is blocked
+  #checkov:skip=CKV2_AWS_42:No own domain: the free *.cloudfront.net certificate is used
+  #checkov:skip=CKV_AWS_174:The default *.cloudfront.net certificate does not allow choosing a minimum TLS version; needs an own domain
   enabled             = true
   comment             = var.name_prefix
   default_root_object = "index.html"
@@ -56,26 +68,28 @@ resource "aws_cloudfront_distribution" "this" {
   }
 
   default_cache_behavior {
-    target_origin_id       = local.frontend_origin_id
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
-    compress               = true
+    target_origin_id           = local.frontend_origin_id
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
+    compress                   = true
   }
 
   dynamic "ordered_cache_behavior" {
     for_each = var.api_path_patterns
 
     content {
-      path_pattern             = ordered_cache_behavior.value
-      target_origin_id         = local.api_origin_id
-      viewer_protocol_policy   = "redirect-to-https"
-      allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-      cached_methods           = ["GET", "HEAD"]
-      cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-      origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
-      compress                 = true
+      path_pattern               = ordered_cache_behavior.value
+      target_origin_id           = local.api_origin_id
+      viewer_protocol_policy     = "redirect-to-https"
+      allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods             = ["GET", "HEAD"]
+      cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+      origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer.id
+      response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security_headers.id
+      compress                   = true
     }
   }
 

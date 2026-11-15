@@ -215,3 +215,42 @@ Una URL que lleva dentro la firma de nuestras credenciales (`X-Amz-Signature`, `
 - ¿Qué cambiarías para usar AWS S3 en lugar de Backblaze?
 - ¿Por qué no basta con validar el tamaño con `HEAD` al confirmar, si además se firma el tamaño?
 - ¿Por qué el límite de subidas no se guarda en la caché en memoria de Django?
+
+---
+
+## 9. Infraestructura como código con Terraform
+
+**Archivos:** `infra/terraform/`, `infra/README.md`, `docs/adr/0005-terraform-validado-sin-aplicar.md`
+
+### Ideas básicas
+
+- **Terraform** lee archivos `.tf` que describen recursos (una VPC, una base de datos) y calcula qué llamadas a la API de AWS harían falta para que existan.
+- **Estado:** Terraform recuerda en `terraform.tfstate` qué creó. Sin estado no sabe qué existe. Aquí no hay estado porque nada se aplica; `backend.tf.example` muestra cómo se guardaría en S3.
+- **`plan` frente a `apply`:** `plan` solo calcula los cambios; `apply` los ejecuta y cobra. El CI nunca llega a `apply`.
+- **Módulo:** una carpeta con `.tf` que recibe variables y devuelve outputs, como una función. La raíz (`main.tf`) conecta los cinco módulos pasando los outputs de uno como variables de otro.
+
+### Cómo se prueba sin AWS
+
+- `terraform validate` compara cada recurso con el esquema real del proveedor de AWS (que se descarga en `init`).
+- `terraform test` ejecuta los archivos `tests/*.tftest.hcl`. Cada bloque `run` hace un `plan` y comprueba `assert`s.
+- `mock_provider "aws" {}` reemplaza al proveedor real: no pide credenciales y se inventa los valores que AWS calcularía (IDs, ARN). Por eso los tests solo afirman sobre valores **escritos en la configuración**; un ID inventado no prueba nada.
+- **Prueba de mutación:** para saber si un test sirve, se rompe a propósito la propiedad (por ejemplo `publicly_accessible = true`) y se mira que falle.
+- **Checkov** busca malas prácticas conocidas. Lo que cuesta dinero se exceptúa con un comentario `#checkov:skip=ID:razón` junto al recurso.
+
+### Decisiones que vale la pena entender
+
+- **Subred privada para RDS:** no tiene ruta a internet; aunque alguien abriera el grupo de seguridad, la base de datos no sería alcanzable desde fuera.
+- **Grupo de seguridad que referencia a otro grupo:** el puerto 5432 se abre "al grupo de la aplicación", no a un rango de IPs. Si la EC2 cambia de IP, la regla sigue valiendo.
+- **Rol de instancia:** la EC2 recibe credenciales temporales de AWS automáticamente. No hay claves guardadas en el servidor; con Backblaze sí hacen falta.
+- **IMDSv2:** el servicio de metadatos de la instancia (de donde salen esas credenciales) exige un token. Esto bloquea el robo de credenciales por SSRF.
+- **Sin NAT Gateway:** costaría unos US$32 al mes. La base de datos no necesita salir a internet y la EC2 está en una subred pública protegida por su grupo de seguridad.
+- **CloudFront delante:** da HTTPS gratis y pone el frontend y la API en el mismo dominio.
+- **ARN construidos con el nombre** (`"arn:aws:s3:::${name}"`): así son conocidos durante el `plan` y los tests pueden leer las políticas completas.
+
+**Preguntas**
+- ¿Qué diferencia hay entre `terraform plan` y `terraform apply`, y cuál de los dos corre el CI?
+- ¿Por qué un test con proveedor simulado no puede afirmar sobre el `id` de una VPC?
+- Si la raíz pasara las subredes públicas al módulo `database`, ¿qué la seguiría protegiendo? ¿Algún test lo detectaría?
+- ¿Por qué la contraseña de RDS no está en ninguna variable de Terraform? ¿Dónde vive y quién puede leerla?
+- ¿Qué acciones S3 necesita el backend y por qué hacen falta `s3:ListBucketVersions` y `s3:DeleteObjectVersion`?
+- ¿Por qué la EC2 no tiene clave SSH, y cómo entrarías a revisarla?

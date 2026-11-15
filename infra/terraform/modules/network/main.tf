@@ -3,6 +3,7 @@
 # private subnets needs to reach the internet.
 
 resource "aws_vpc" "this" {
+  #checkov:skip=CKV2_AWS_11:Flow logs add CloudWatch or S3 cost; security groups already limit every path
   cidr_block           = var.vpc_cidr
   enable_dns_support   = true
   enable_dns_hostnames = true

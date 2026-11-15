@@ -72,4 +72,12 @@ run "database_is_private" {
     ])
     error_message = "The database must require TLS (rds.force_ssl = 1)."
   }
+
+  assert {
+    condition = (
+      aws_db_instance.this.iam_database_authentication_enabled == true &&
+      contains(aws_db_instance.this.enabled_cloudwatch_logs_exports, "postgresql")
+    )
+    error_message = "IAM authentication must be available and PostgreSQL logs exported."
+  }
 }

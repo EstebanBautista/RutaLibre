@@ -8,10 +8,18 @@ locals {
 }
 
 resource "aws_s3_bucket" "evidence" {
+  #checkov:skip=CKV_AWS_18:Access logs need a separate log bucket; out of scope for this design
+  #checkov:skip=CKV_AWS_144:Cross-region replication doubles storage cost; photos are evidence, not critical records
+  #checkov:skip=CKV_AWS_145:SSE-S3 (AES256) encrypts at rest without a paid customer-managed KMS key
+  #checkov:skip=CKV2_AWS_62:No consumer for bucket events
   bucket = var.evidence_bucket_name
 }
 
 resource "aws_s3_bucket" "frontend" {
+  #checkov:skip=CKV_AWS_18:Access logs need a separate log bucket; out of scope for this design
+  #checkov:skip=CKV_AWS_144:Cross-region replication doubles storage cost; photos are evidence, not critical records
+  #checkov:skip=CKV_AWS_145:SSE-S3 (AES256) encrypts at rest without a paid customer-managed KMS key
+  #checkov:skip=CKV2_AWS_62:No consumer for bucket events
   bucket = var.frontend_bucket_name
 }
 
@@ -143,6 +151,35 @@ resource "aws_s3_bucket_lifecycle_configuration" "evidence" {
   }
 
   depends_on = [aws_s3_bucket_versioning.evidence]
+}
+
+# Old versions of the frontend files are kept 30 days, enough to roll back.
+resource "aws_s3_bucket_lifecycle_configuration" "frontend" {
+  bucket = aws_s3_bucket.frontend.id
+
+  rule {
+    id     = "expire-noncurrent"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
+  }
+
+  rule {
+    id     = "abort-multipart"
+    status = "Enabled"
+
+    filter {}
+
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
+  }
+
+  depends_on = [aws_s3_bucket_versioning.frontend]
 }
 
 resource "aws_s3_bucket_policy" "evidence" {

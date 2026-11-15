@@ -110,3 +110,24 @@ Todo viewset hereda de `BusinessScopedMixin`, que filtra el queryset por el nego
 | Optimizador | `rutalibre-optimizer` | `JWT_SIGNING_KEY`, `CORS_ALLOWED_ORIGINS` |
 
 Cada push a `main` despliega solo, así que una migración se aplica a Neon **antes** del push. Las migraciones y los datos demo se aplican contra Neon desde una máquina local (`python manage.py migrate` y `seed_demo` con `DATABASE_URL` en `backend/.env.local`). De todos modos, el login demo crea los datos si faltan.
+
+## Infraestructura como código (AWS)
+
+[`infra/terraform/`](../infra/terraform/) describe el mismo sistema en AWS. Está **validado en el CI, no aplicado**: el demo sigue en Vercel. Detalle, costo y límites en [`infra/README.md`](../infra/README.md); la decisión en el [ADR 0005](adr/0005-terraform-validado-sin-aplicar.md).
+
+| Hoy | En AWS (Terraform) | Módulo |
+|---|---|---|
+| Frontend en Vercel | S3 privado detrás de CloudFront | `storage`, `edge` |
+| Django y FastAPI en Vercel Functions | Una EC2 con nginx, gunicorn y uvicorn | `compute` |
+| Neon | RDS PostgreSQL en subredes privadas | `database`, `network` |
+| Backblaze B2 con clave limitada a un bucket | S3 con un rol IAM de instancia | `storage`, `compute` |
+| Variables secretas de Vercel | Parameter Store y Secrets Manager | `compute` |
+
+Decisiones de seguridad:
+
+- **Base de datos privada.** Sin IP pública, en subredes sin ruta a internet, y el puerto 5432 abierto solo al grupo de seguridad de la aplicación.
+- **Sin SSH.** La EC2 no tiene par de claves ni puerto 22; se administra con Session Manager. Solo CloudFront llega a su puerto 80.
+- **IAM mínimo.** El rol de la instancia tiene tres políticas separadas por propósito; la de fotos lista exactamente las 6 acciones S3 que usa `storage.py`.
+- **Secretos fuera de Terraform.** RDS genera y guarda su contraseña; las claves de Django van en Parameter Store. Ningún secreto aparece en el código ni en el estado.
+
+Verificación sin cuenta de AWS: `terraform fmt`, `validate`, TFLint, `terraform test` con el proveedor simulado, `shellcheck` y Checkov.

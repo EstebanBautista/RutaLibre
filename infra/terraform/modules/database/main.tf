@@ -36,6 +36,9 @@ resource "aws_vpc_security_group_ingress_rule" "from_app" {
 }
 
 resource "aws_db_instance" "this" {
+  #checkov:skip=CKV_AWS_157:Multi-AZ doubles the cost; a single instance with 7-day backups is enough for this app
+  #checkov:skip=CKV_AWS_118:Enhanced monitoring adds CloudWatch cost and a monitoring role; basic metrics are enough
+  #checkov:skip=CKV_AWS_353:Performance Insights is beyond the needs of a demo-size database
   identifier     = var.name_prefix
   engine         = "postgres"
   engine_version = var.engine_version
@@ -48,6 +51,8 @@ resource "aws_db_instance" "this" {
   db_name                     = var.db_name
   username                    = var.username
   manage_master_user_password = true
+  # Available for operators; Django keeps using the managed password.
+  iam_database_authentication_enabled = true
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   parameter_group_name   = aws_db_parameter_group.this.name
@@ -61,4 +66,6 @@ resource "aws_db_instance" "this" {
   skip_final_snapshot        = false
   final_snapshot_identifier  = "${var.name_prefix}-final"
   auto_minor_version_upgrade = true
+
+  enabled_cloudwatch_logs_exports = ["postgresql"]
 }

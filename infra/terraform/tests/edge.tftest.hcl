@@ -74,4 +74,12 @@ run "https_everywhere" {
     )
     error_message = "Only this CloudFront distribution may read the frontend bucket."
   }
+
+  assert {
+    condition = (
+      aws_cloudfront_distribution.this.default_cache_behavior[0].response_headers_policy_id != null &&
+      alltrue([for behavior in aws_cloudfront_distribution.this.ordered_cache_behavior : behavior.response_headers_policy_id != null])
+    )
+    error_message = "Every behavior must add the security response headers."
+  }
 }
