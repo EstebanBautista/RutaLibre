@@ -39,3 +39,9 @@ variable "frontend_bucket_name" {
   type        = string
   default     = "rutalibre-frontend"
 }
+
+variable "repo_url" {
+  description = "Git repository the app server deploys."
+  type        = string
+  default     = "https://github.com/EstebanBautista/RutaLibre.git"
+}
