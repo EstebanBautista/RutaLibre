@@ -1,0 +1,15 @@
+# Not active: this configuration is validated in CI but never applied, so it
+# keeps no state. To apply it for real, copy this file to backend.tf, create
+# the bucket first, and run `terraform init`.
+#
+# use_lockfile stores a lock object next to the state in S3, so two people
+# cannot apply at the same time (no DynamoDB table needed).
+terraform {
+  backend "s3" {
+    bucket       = "rutalibre-terraform-state"
+    key          = "prod/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}

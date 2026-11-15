@@ -11,3 +11,8 @@ node_modules/
 engine/build/
 staticfiles/
 .pytest_cache/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log

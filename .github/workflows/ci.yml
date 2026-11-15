@@ -103,3 +103,35 @@ jobs:
           path: frontend/wasm
       - name: Tests del cargador WebAssembly
         run: node --test "frontend/tests/*.mjs"
+
+  infra:
+    name: Infraestructura (Terraform)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra/terraform
+    # Nothing here talks to AWS: no credentials exist, the tests use a mocked
+    # provider and the configuration is never applied.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - name: Formato
+        run: terraform fmt -check -recursive
+      - name: Init sin backend
+        run: terraform init -backend=false -lockfile=readonly -input=false
+      - name: Validate
+        run: terraform validate
+      - uses: terraform-linters/setup-tflint@v6
+        with:
+          tflint_version: v0.66.0
+      - name: TFLint
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          tflint --init
+          tflint --recursive --config "$(pwd)/.tflint.hcl"
+      - name: Tests (proveedor simulado)
+        run: terraform test
